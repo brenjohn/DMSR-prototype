@@ -99,38 +99,50 @@ def plot_spectra(output_dir, step, save=False):
     SR_ks, SR_spectrum = compute_power_spectrum(SR_positions, (64, 64, 64))
     HR_ks, HR_spectrum = compute_power_spectrum(HR_positions, (64, 64, 64))
     
-    # Create a figure
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(19, 8))
-    fontsize = 20
+    # # Create a figure
+    # fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(19, 8))
+    # fontsize = 20
     
-    # LR scatter plot
-    ax1.plot(LR_ks, LR_spectrum)
-    ax1.set_title('LR')
-    ax1.set_xlabel('k')
-    ax1.set_ylabel('P(k)')
-    ax1.set_xscale('log')
-    ax1.set_yscale('log')
+    # # LR scatter plot
+    # ax1.plot(LR_ks, LR_spectrum)
+    # ax1.set_title('LR')
+    # ax1.set_xlabel('k')
+    # ax1.set_ylabel('P(k)')
+    # ax1.set_xscale('log')
+    # ax1.set_yscale('log')
     
-    # SR scatter plot
-    ax2.plot(SR_ks, SR_spectrum)
-    ax2.set_title('SR')
-    ax2.set_xlabel('k')
-    ax2.set_xscale('log')
-    ax2.set_yscale('log')
+    # # SR scatter plot
+    # ax2.plot(SR_ks, SR_spectrum)
+    # ax2.set_title('SR')
+    # ax2.set_xlabel('k')
+    # ax2.set_xscale('log')
+    # ax2.set_yscale('log')
     
-    # HR scatter plot
-    ax3.plot(HR_ks, HR_spectrum)
-    ax3.set_title('HR')
-    ax3.set_xlabel('k')
-    ax3.set_xscale('log')
-    ax3.set_yscale('log')
+    # # HR scatter plot
+    # ax3.plot(HR_ks, HR_spectrum)
+    # ax3.set_title('HR')
+    # ax3.set_xlabel('k')
+    # ax3.set_xscale('log')
+    # ax3.set_yscale('log')
     
-    # Add title and adjust layout
-    fig.suptitle(f'Epoch {step}')
-    plt.tight_layout()
+    # # Add title and adjust layout
+    # fig.suptitle(f'Epoch {step}')
+    # plt.tight_layout()
+    
+    plt.figure(figsize=(8, 8))
+    plt.plot(HR_ks, HR_spectrum, label='HR', linewidth=4, color='red')
+    plt.plot(LR_ks, LR_spectrum, label='LR', linewidth=4)
+    plt.plot(SR_ks, SR_spectrum, label='SR', linewidth=4, color='black')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('k')
+    plt.ylabel('P(k)')
+    plt.title(f'Epoch {step}')
+    plt.grid()
+    plt.legend()
     
     if save:
-        plots_dir = 'plots/outputs/'
+        plots_dir = 'plots/training_spectra/'
         os.makedirs(plots_dir, exist_ok=True)
         plot_name = plots_dir + f'output_power_sprectra_{step:04}.png'
         plt.savefig(plot_name, dpi=100)

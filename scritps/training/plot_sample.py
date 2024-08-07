@@ -52,8 +52,8 @@ def get_sample_positions(outputs_dir, LR_box_size, HR_box_size, step, n=0):
 
 def plot_samples(output_dir, step, save=False):
     
-    LR_box_size = 71.12375536862562
-    HR_box_size = 62.23328594754742
+    LR_box_size = 71.12375536862562 / 2
+    HR_box_size = 62.23328594754742 / 2
     positions = get_sample_positions(output_dir, LR_box_size, HR_box_size, step)
     (LR_xs, LR_ys), (SR_xs, SR_ys), (HR_xs, HR_ys) = positions
     
@@ -61,15 +61,15 @@ def plot_samples(output_dir, step, save=False):
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 7))
     
     # LR scatter plot
-    ax1.scatter(LR_xs, LR_ys, alpha=0.1, s=0.2)
+    ax1.scatter(LR_xs, LR_ys, alpha=0.2, s=0.4)
     ax1.set_title('LR')
     
     # SR scatter plot
-    ax2.scatter(SR_xs, SR_ys, alpha=0.1, s=0.2)
+    ax2.scatter(SR_xs, SR_ys, alpha=0.2, s=0.4)
     ax2.set_title('SR')
     
     # HR scatter plot
-    ax3.scatter(HR_xs, HR_ys, alpha=0.1, s=0.2)
+    ax3.scatter(HR_xs, HR_ys, alpha=0.2, s=0.4)
     ax3.set_title('HR')
     
     # Add title and adjust layout
@@ -77,7 +77,7 @@ def plot_samples(output_dir, step, save=False):
     plt.tight_layout()
     
     if save:
-        plots_dir = 'plots/outputs/'
+        plots_dir = 'plots/training_samples/'
         os.makedirs(plots_dir, exist_ok=True)
         plot_name = plots_dir + f'output_{step:04}.png'
         plt.savefig(plot_name, dpi=100)

@@ -8,7 +8,7 @@ Created on Wed May 29 18:56:23 2024
 
 from tensorflow import keras
 from keras.random import normal
-from keras.layers import Conv3D, PReLU, UpSampling3D, Cropping3D
+from keras.layers import Conv3D, PReLU, UpSampling3D, Cropping3D, Conv3DTranspose
 
 
 def build_generator(N, scale_factor, channels=256):
@@ -136,6 +136,13 @@ def HBlock(x_p, y_p, noiseA, noiseB, in_channels, out_channels):
     p = HBlock_projection(x_n)
     
     y_n = UpSampling3D(size=2, data_format='channels_first')(y_p)
+    # y_n = Conv3DTranspose(
+    #     3, 
+    #     kernel_size=4, 
+    #     strides=2, 
+    #     padding='same', 
+    #     data_format='channels_first'
+    # )(y_p)
     y_n = Cropping3D(2, data_format='channels_first')(y_n)
     
     return x_n, y_n + p
@@ -145,18 +152,18 @@ def HBlock_conv(x, noiseA, noiseB, in_channels, out_channels):
     """
     The convolutional block of the H-block.
     
-                                x     noiseA        noiseB
-                                |       |             |
-                                +---Convolution       |
-                                |                     |
-                            Upsample x2               |
-                                |                     |
-                            Convolution               |
-                                |                     |
-                                +----------------Convolution
-                                |
-                            Convolution
-                                |
+            x     noiseA        noiseB
+            |       |             |
+            +---Convolution       |
+            |                     |
+        Upsample x2               |
+            |                     |
+        Convolution               |
+            |                     |
+            +----------------Convolution
+            |
+        Convolution
+            |
     
     Parameters
     ----------
@@ -179,6 +186,13 @@ def HBlock_conv(x, noiseA, noiseB, in_channels, out_channels):
     
     # Upsample.
     x = UpSampling3D(size=2, data_format='channels_first')(x)
+    # x = Conv3DTranspose(
+    #     in_channels, 
+    #     kernel_size=4, 
+    #     strides=2, 
+    #     padding='same', 
+    #     data_format='channels_first'
+    # )(x)
     x = Conv3D(out_channels, 3, data_format='channels_first')(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
 

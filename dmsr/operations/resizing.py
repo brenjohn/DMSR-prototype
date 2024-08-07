@@ -23,23 +23,38 @@ def scale_up_data(data, scale, batch=False):
     return data
 
 
-def cut_fields(fields, cut_size, grid_size):
+def cut_fields(fields, cut_size, grid_size, step=0, pad=0):
     """
     
     """
     cuts = []
     
-    for i in range(0, grid_size, cut_size):
-        for j in range(0, grid_size, cut_size):
-            for k in range(0, grid_size, cut_size):
-                cuts.append(
-                    fields[:, :, i:i+cut_size, j:j+cut_size, k:k+cut_size]
+    if not step:
+        step = cut_size
+    
+    for i in range(0, grid_size, step):
+        for j in range(0, grid_size, step):
+            for k in range(0, grid_size, step):
+                
+                slice_x = slice(
+                    (i - pad) % (grid_size + 1), 
+                    (i + cut_size + pad) % (grid_size + 1)
                 )
+                slice_y = slice(
+                    (j - pad) % (grid_size + 1), 
+                    (j + cut_size + pad) % (grid_size + 1)
+                )
+                slice_z = slice(
+                    (k - pad) % (grid_size + 1), 
+                    (k + cut_size + pad) % (grid_size + 1)
+                )
+                
+                cuts.append(fields[:, :, slice_x, slice_y, slice_z])
     
     return np.concatenate(cuts)
 
 
-@tf.function(experimental_compile=True)
+@tf.function
 def crop_to_match(large_tensor, small_tensor):
     """
     Crops the larger tensor to match the size of the smalled tensor.
@@ -51,7 +66,7 @@ def crop_to_match(large_tensor, small_tensor):
     return crop_edge(large_tensor, offset)
 
 
-@tf.function(experimental_compile=True)
+@tf.function
 def crop_edge(tensor, size):
     """
     Crop the spacial dimensions of the given tensor by the given amount.

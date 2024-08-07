@@ -11,6 +11,7 @@ import tensorflow as tf
 from tensorflow import keras
 from keras.random import normal
 from keras.layers import Input, Conv3D, PReLU, Cropping3D, Flatten
+# from keras.initializers import HeNormal
 
 
 def build_critic(generator, channels=16):
@@ -45,6 +46,11 @@ def build_critic(generator, channels=16):
     critic_inputs = Input(shape=critic_input_shape, name='critic_input_layer')
     
     num_cells = critic_input_shape[-1]
+    
+    # kwargs = {
+    #     'data_format'        : 'channels_first',
+    #     'kernel_initializer' : HeNormal()
+    # }
     
     # Initial convolutional layers.
     x = Conv3D(channels, 3, data_format='channels_first')(critic_inputs)
@@ -86,18 +92,18 @@ def residual_block(x, channels):
     """
     Adds a residual block to x
     
-                  x
-                  |------------>|
-                  |             |
-             Convolution   Convolution
-                  |             |
-             Convolution        |
-                  |             |
-                  + <-----------|
-                  |
-              Downsample
-                  |
-                  x
+                 x
+                 |------------>|
+                 |             |
+            Convolution   Convolution
+                 |             |
+            Convolution        |
+                 |             |
+                 + <-----------|
+                 |
+             Downsample
+                 |
+                 x
                   
     next_size = (prev_size - 4) / 2
     """

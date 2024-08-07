@@ -30,22 +30,29 @@ class DMSRGAN(keras.Model):
             critic_channels=16,
             critic_steps=5,
             gp_weight=10.0,
-            gp_rate=8,
+            gp_rate=16,
             noise_std = 2,
             noise_epochs = 70,
-            ):
+        ):
         
         super().__init__()
         
-        self.generator     = build_generator(LR_grid_size, 
-                                             scale_factor, 
-                                             generator_channels)
-        self.sampler       = build_latent_space_sampler(self.generator)
+        self.generator = build_generator(
+            LR_grid_size, 
+            scale_factor, 
+            generator_channels
+        )
+        self.sampler = build_latent_space_sampler(self.generator)
         
-        self.critic        = build_critic(self.generator, critic_channels)
-        self.noise_sampler = CriticNoiseSampler(self.critic, 
-                                                noise_std, 
-                                                noise_epochs)
+        self.critic = build_critic(
+            self.generator,
+            critic_channels
+        )
+        self.noise_sampler = CriticNoiseSampler(
+            self.critic, 
+            noise_std, 
+            noise_epochs
+        )
         
         self.critic_steps  = critic_steps
         self.gp_weight     = gp_weight
@@ -63,7 +70,32 @@ class DMSRGAN(keras.Model):
         self.generator_optimizer = generator_optimizer
         
     
+    def get_config(self):
+        config = super(DMSRGAN, self).get_config()
+        config.update({
+            'generator'    : self.generator,
+            'critic'       : self.critic,
+            'critic_steps' : self.critic_steps,
+            'gp_weight'    : self.gp_weight,
+            'gp_rate'      : self.gp_rate,
+            'box_size'     : self.box_size,
+            'sampler'      : self.sampler
+        })
+        return config
+
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+        
+    
     def supervised_dataset(self, dataset, batch_size):
+        """
+        Returns a new dataset with latent space samples added to the LR data
+        from the given dataset. The new dataset can be used for supervised
+        training of a generator to learn to predict the HR data from the LR
+        data.
+        """
         
         def add_latent_sample(LR_fields, HR_fields):
             lantent_variables = self.sampler(batch_size)
@@ -87,6 +119,8 @@ class DMSRGAN(keras.Model):
     
     @tf.function
     def interpolate(self, real_data, fake_data):
+        """
+        """
         batch_size = tf.shape(real_data)[0]
         eps = tf.random.uniform([batch_size, 1, 1, 1, 1])
         diff = fake_data - real_data
@@ -95,49 +129,59 @@ class DMSRGAN(keras.Model):
     
     @tf.function
     def prepare_critic_data(self, data, US_data, batch_size):
+        """
+        Prepares the given data to be passed to the critic model.
+        
+        The data is augmented with noise, determined be the noise_sampler, and
+        then concatenated with both the US data it's conditioned on and a 
+        density field computed from the data.
+        """
         data = data + self.noise_sampler(batch_size)
         density = ngp_density_field(data, self.box_size)
         data = tf.concat((density, data, US_data), axis=1)
         return data
 
 
+    @tf.function
     def train_step(self, LR_HR_data):
         """
+        Train step for the DMSR-GAN.
         """
-        # 1. Unpack and prepare the data batch for training:
+        # Unpack and prepare the data batch for training:
         #   a. Scale up LR data to create US data which will be fed to the
         #      critic model. US data represents the LR data that the SR and HR
         #      data are conditioned on.
-        #   b. Create density fields from the HR and US data
-        #   c. Concatenate the density fields with their respective HR and US
-        #      data
+        #   b. Create density fields from the US data
+        #   c. Concatenate the density fields with their respective US data.
         LR_data, HR_data = LR_HR_data
         US_data = scale_up_data(LR_data, scale=2)
         US_data = crop_to_match(US_data, HR_data)
         US_density = ngp_density_field(US_data, self.box_size)
         US_data = tf.concat((US_density, US_data), axis=1)
         
-        # 2. Train the critic model first and retain the critic loss.
-        for i in range(self.critic_steps):
-            critic_loss, gp_loss = self.critic_train_step(
-                LR_data, US_data, HR_data
-            )
-           
-        # 3. Train the generator model and get the generator loss
-        gen_loss = self.generator_train_step(LR_data, US_data)
-        
-        self.batch_counter.assign_add(1)
+        # Train the critic model first and retain the critic loss.
+        critic_loss, gp_loss = self.critic_train_step(
+            LR_data, US_data, HR_data
+        )
         losses = {
-            "critic_loss"      : critic_loss, 
-            "generator_loss"   : gen_loss,
+            "critic_loss"      : critic_loss,
+            "generator_loss"   : 1.0,
             "gradient_penalty" : gp_loss
         }
+           
+        # Train the generator model and get the generator loss
+        if tf.equal(self.batch_counter % self.critic_steps, 0.0):
+            gen_loss = self.generator_train_step(LR_data, US_data)
+            losses["generator_loss"] = gen_loss
+        
+        self.batch_counter.assign_add(1)
         return losses
     
     
     @tf.function
     def critic_train_step(self, LR_data, US_data, HR_data):
         """
+        Train step for the critic.
         """
         batch_size = tf.shape(LR_data)[0]
         
@@ -174,6 +218,15 @@ class DMSRGAN(keras.Model):
     
     @tf.function
     def gradient_penalty(self, HR_data, SR_data):
+        """
+        Compute the derivative of the gradient penalty term and update the
+        weights of the critic accordingly.
+        
+        Note, as this function both calulates the gradient of the gradient
+        penalty and applies the gradients to the critic weights, it needs to be
+        used after the gradient of the critic loss is computed and before the
+        critic's weights are updated with the gradients of the critic loss.
+        """
         # Add gradient penalty term to the loss.
         if tf.equal(self.batch_counter % self.gp_rate, 0.0):
             
@@ -186,7 +239,7 @@ class DMSRGAN(keras.Model):
                 gradients = tf.gradients(gp_logits, GP_data)
                 grad_norm = tf.square(gradients)
                 grad_norm = tf.reduce_sum(grad_norm, axis=[1, 2, 3, 4])
-                grad_norm = tf.sqrt(grad_norm)
+                # grad_norm = tf.sqrt(grad_norm)
                 grad_pnlt = tf.reduce_mean((grad_norm - 1.0) ** 2)
                 grad_pnlt = grad_pnlt * self.gp_weight
               
@@ -207,7 +260,7 @@ class DMSRGAN(keras.Model):
     @tf.function
     def generator_train_step(self, LR_data, US_data):
         """
-        Train the generator
+        Train step for the generator.
         """
         # Generate noise for the generator.
         batch_size = tf.shape(LR_data)[0]
@@ -232,23 +285,72 @@ class DMSRGAN(keras.Model):
         )
         
         return gen_loss
-    
+
 
 
 class DMSRMonitor(keras.callbacks.Callback):
     
     def __init__(self, generator_noise, LR_samples, HR_samples):
+        
         self.noise = generator_noise
         self.LR_samples = LR_samples
         self.HR_samples = HR_samples
         self.num_samples = tf.shape(LR_samples)[0]
         self.data_dir = 'data/training_outputs/'
-
+        
+        self.critic_epoch_loss = []
+        self.critic_batch_loss = []
+        self.critic_batches = []
+        self.critic_epochs = []
+        self.critic_loss_epoch_total = 0.0
+        self.critic_updates = 0
+        
+        self.generator_epoch_loss = []
+        self.generator_batch_loss = []
+        self.generator_batches = []
+        self.generator_epochs = []
+        self.generator_loss_epoch_total = 0.0
+        self.generator_updates = 0
+        
+        self.grad_pnlt_epoch_loss = []
+        self.grad_pnlt_batch_loss = []
+        self.grad_pnlt_batches = []
+        self.grad_pnlt_epochs = []
+        self.grad_pnlt_loss_epoch_total = 0.0
+        self.grad_pnlt_updates = 0
+        
+        self.batch = 0
+    
+    
+    # def on_epoch_begin(self, epoch, logs=None):
+    #     # TODO controlling the noise level should be done by a seperate
+    #     # controller callback.
+    #     self.model.noise_sampler.update()
+    #     print(
+    #         'Noise level is now', 
+    #         self.model.noise_sampler.current_std.read_value()
+    #     )
+    
+    
     def on_epoch_end(self, epoch, logs=None):
         
-        self.model.noise_sampler.update()
-        print()
-        print('Noise level is now', self.model.noise_sampler.current_std.read_value())
+        epoch_average = self.critic_loss_epoch_total / self.critic_updates
+        self.critic_epoch_loss.append(epoch_average)
+        self.critic_epochs.append(self.critic_batches[-1])
+        self.critic_loss_epoch_total = 0.0
+        self.critic_updates = 0
+        
+        epoch_average = self.generator_loss_epoch_total / self.generator_updates
+        self.generator_epoch_loss.append(epoch_average)
+        self.generator_epochs.append(self.generator_batches[-1])
+        self.generator_loss_epoch_total = 0.0
+        self.generator_updates = 0
+        
+        epoch_average = self.grad_pnlt_loss_epoch_total / self.grad_pnlt_updates
+        self.grad_pnlt_epoch_loss.append(epoch_average)
+        self.grad_pnlt_epochs.append(self.grad_pnlt_batches[-1])
+        self.grad_pnlt_loss_epoch_total = 0.0
+        self.grad_pnlt_updates = 0
         
         if not (epoch % 10 == 0):
             return
@@ -266,3 +368,29 @@ class DMSRMonitor(keras.callbacks.Callback):
             np.save(output_dir + f'SR_sample_{i}_{epoch}.npy', SR_sample)
             np.save(output_dir + f'LR_sample_{i}_{epoch}.npy', LR_sample)
             np.save(output_dir + f'HR_sample_{i}_{epoch}.npy', HR_sample)
+            
+    
+    def on_batch_end(self, batch, logs=None):
+        
+        self.batch += 1
+        batch = self.batch
+        
+        critic_loss = logs.get('critic_loss')
+        self.critic_batch_loss.append(critic_loss)
+        self.critic_batches.append(batch)
+        self.critic_loss_epoch_total += critic_loss
+        self.critic_updates += 1
+        
+        generator_loss = logs.get('generator_loss')
+        if not generator_loss == 1.0:
+            self.generator_batch_loss.append(generator_loss)
+            self.generator_batches.append(batch)
+            self.generator_loss_epoch_total += generator_loss
+            self.generator_updates += 1
+            
+        grad_pnlt_loss = logs.get('generator_loss')
+        if not grad_pnlt_loss == 0.0:
+            self.grad_pnlt_batch_loss.append(grad_pnlt_loss)
+            self.grad_pnlt_batches.append(batch)
+            self.grad_pnlt_loss_epoch_total += grad_pnlt_loss
+            self.grad_pnlt_updates += 1

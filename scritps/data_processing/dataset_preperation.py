@@ -49,8 +49,8 @@ HR_fields, box_size, HR_grid_size = get_displacement_fields(HR_snapshots)
 
 
 #%%
-LR_fields = cut_fields(LR_fields, 32, LR_grid_size)
-HR_fields = cut_fields(HR_fields, 64, HR_grid_size)
+LR_fields = cut_fields(LR_fields, 16, LR_grid_size)
+HR_fields = cut_fields(HR_fields, 32, HR_grid_size)
 
 
 #%%
@@ -61,4 +61,4 @@ HR_file = '../../data/dmsr_training/HR_fields.npy'
 np.save(HR_file, HR_fields)
 
 meta_file = '../../data/dmsr_training/metadata.npy'
-np.save(meta_file, [box_size/2, LR_grid_size//2, HR_grid_size//2])
+np.save(meta_file, [box_size/4, LR_grid_size//4, HR_grid_size//4])
