@@ -18,48 +18,70 @@ from ...operations.resizing import scale_up_data, crop_to_match
 from .dmsr_generator import build_generator, build_latent_space_sampler
 from .dmsr_critic import build_critic, CriticNoiseSampler
 
+# TODO I should use a factory pattern to initialise DMSRGAN objects in the init
+# and from_config methods to deal with the various possible arguments.
 
+@keras.utils.register_keras_serializable()
 class DMSRGAN(keras.Model):
-    
+        
     def __init__(
             self,
-            LR_grid_size, 
-            scale_factor,
-            HR_box_size,
+            LR_grid_size = 16, 
+            scale_factor = 2,
+            HR_box_size = 26.6,
             generator_channels=256,
             critic_channels=16,
             critic_steps=5,
             gp_weight=10.0,
             gp_rate=16,
-            noise_std = 2,
+            noise_std = 0,
             noise_epochs = 70,
+            **kwargs
         ):
         
         super().__init__()
         
-        self.generator = build_generator(
+        components = self.build_components(
             LR_grid_size, 
             scale_factor, 
-            generator_channels
-        )
-        self.sampler = build_latent_space_sampler(self.generator)
-        
-        self.critic = build_critic(
-            self.generator,
-            critic_channels
-        )
-        self.noise_sampler = CriticNoiseSampler(
-            self.critic, 
-            noise_std, 
+            generator_channels, 
+            critic_channels, 
+            noise_std,
             noise_epochs
         )
+        generator, sampler, critic, noise_sampler = components
         
+        self.generator     = generator
+        self.sampler       = sampler
+        self.critic        = critic
+        self.noise_sampler = noise_sampler
         self.critic_steps  = critic_steps
         self.gp_weight     = gp_weight
         self.gp_rate       = gp_rate
         self.box_size      = HR_box_size
         
         self.batch_counter = tf.Variable(0, trainable=False, dtype=tf.float32)
+        
+        
+    @classmethod
+    def build_components(
+            cls,
+            LR_grid_size, 
+            scale_factor,
+            generator_channels=256,
+            critic_channels=16,
+            noise_std = 2,
+            noise_epochs = 70
+        ):
+        
+        generator = build_generator(
+            LR_grid_size, scale_factor, generator_channels
+        )
+        critic = build_critic(generator, critic_channels)
+        noise_sampler = CriticNoiseSampler(critic, noise_std, noise_epochs)
+        sampler = build_latent_space_sampler(generator)
+        
+        return generator, sampler, critic, noise_sampler
 
 
     def compile(self, critic_optimizer, generator_optimizer):
@@ -73,20 +95,47 @@ class DMSRGAN(keras.Model):
     def get_config(self):
         config = super(DMSRGAN, self).get_config()
         config.update({
-            'generator'    : self.generator,
-            'critic'       : self.critic,
-            'critic_steps' : self.critic_steps,
-            'gp_weight'    : self.gp_weight,
-            'gp_rate'      : self.gp_rate,
-            'box_size'     : self.box_size,
-            'sampler'      : self.sampler
+            'generator'     : self.generator.get_config(),
+            'critic'        : self.critic.get_config(),
+            'critic_steps'  : self.critic_steps,
+            'gp_weight'     : self.gp_weight,
+            'gp_rate'       : self.gp_rate,
+            'box_size'      : self.box_size,
+            'noise_sampler' : self.noise_sampler.get_config(),
+            'batch_counter' : self.batch_counter.numpy()
         })
         return config
 
 
     @classmethod
     def from_config(cls, config):
-        return cls(**config)
+        dmsr_gan = cls(**config)
+        dmsr_gan.set_config(config)
+        return dmsr_gan
+    
+    
+    def set_config(self, config):
+
+        config['noise_sampler'] = CriticNoiseSampler.from_config(
+            config['noise_sampler']
+        )
+        
+        self.noise_sampler = config['noise_sampler']
+        self.critic_steps  = config['critic_steps']
+        self.gp_weight     = config['gp_weight']
+        self.gp_rate       = config['gp_rate']
+        self.box_size      = config['box_size']
+        self.batch_counter = tf.Variable(
+            config['batch_counter'], trainable=False, dtype=tf.float32
+        )
+        
+        sampler = build_latent_space_sampler(self.generator)
+        self.sampler = sampler
+        
+    
+    def build(self):
+        self.generator.build(self.generator.input)
+        self.critic.build(self.critic.input)
         
     
     def supervised_dataset(self, dataset, batch_size):
@@ -285,112 +334,3 @@ class DMSRGAN(keras.Model):
         )
         
         return gen_loss
-
-
-
-class DMSRMonitor(keras.callbacks.Callback):
-    
-    def __init__(self, generator_noise, LR_samples, HR_samples):
-        
-        self.noise = generator_noise
-        self.LR_samples = LR_samples
-        self.HR_samples = HR_samples
-        self.num_samples = tf.shape(LR_samples)[0]
-        self.data_dir = 'data/training_outputs/'
-        
-        self.critic_epoch_loss = []
-        self.critic_batch_loss = []
-        self.critic_batches = []
-        self.critic_epochs = []
-        self.critic_loss_epoch_total = 0.0
-        self.critic_updates = 0
-        
-        self.generator_epoch_loss = []
-        self.generator_batch_loss = []
-        self.generator_batches = []
-        self.generator_epochs = []
-        self.generator_loss_epoch_total = 0.0
-        self.generator_updates = 0
-        
-        self.grad_pnlt_epoch_loss = []
-        self.grad_pnlt_batch_loss = []
-        self.grad_pnlt_batches = []
-        self.grad_pnlt_epochs = []
-        self.grad_pnlt_loss_epoch_total = 0.0
-        self.grad_pnlt_updates = 0
-        
-        self.batch = 0
-    
-    
-    # def on_epoch_begin(self, epoch, logs=None):
-    #     # TODO controlling the noise level should be done by a seperate
-    #     # controller callback.
-    #     self.model.noise_sampler.update()
-    #     print(
-    #         'Noise level is now', 
-    #         self.model.noise_sampler.current_std.read_value()
-    #     )
-    
-    
-    def on_epoch_end(self, epoch, logs=None):
-        
-        epoch_average = self.critic_loss_epoch_total / self.critic_updates
-        self.critic_epoch_loss.append(epoch_average)
-        self.critic_epochs.append(self.critic_batches[-1])
-        self.critic_loss_epoch_total = 0.0
-        self.critic_updates = 0
-        
-        epoch_average = self.generator_loss_epoch_total / self.generator_updates
-        self.generator_epoch_loss.append(epoch_average)
-        self.generator_epochs.append(self.generator_batches[-1])
-        self.generator_loss_epoch_total = 0.0
-        self.generator_updates = 0
-        
-        epoch_average = self.grad_pnlt_loss_epoch_total / self.grad_pnlt_updates
-        self.grad_pnlt_epoch_loss.append(epoch_average)
-        self.grad_pnlt_epochs.append(self.grad_pnlt_batches[-1])
-        self.grad_pnlt_loss_epoch_total = 0.0
-        self.grad_pnlt_updates = 0
-        
-        if not (epoch % 10 == 0):
-            return
-        
-        generator_inputs = (self.LR_samples,) + self.noise
-        SR_samples = self.model.generator(generator_inputs)
-        
-        output_dir = self.data_dir + f'step_{epoch:04}/'
-        os.makedirs(output_dir, exist_ok=True)
-
-        for i in range(self.num_samples):
-            LR_sample = self.LR_samples[i].numpy()
-            SR_sample = SR_samples[i].numpy()
-            HR_sample = self.HR_samples[i].numpy()
-            np.save(output_dir + f'SR_sample_{i}_{epoch}.npy', SR_sample)
-            np.save(output_dir + f'LR_sample_{i}_{epoch}.npy', LR_sample)
-            np.save(output_dir + f'HR_sample_{i}_{epoch}.npy', HR_sample)
-            
-    
-    def on_batch_end(self, batch, logs=None):
-        
-        self.batch += 1
-        batch = self.batch
-        
-        critic_loss = logs.get('critic_loss')
-        self.critic_batch_loss.append(critic_loss)
-        self.critic_batches.append(batch)
-        self.critic_loss_epoch_total += critic_loss
-        self.critic_updates += 1
-        
-        generator_loss = logs.get('generator_loss')
-        if not generator_loss == 1.0:
-            self.generator_batch_loss.append(generator_loss)
-            self.generator_batches.append(batch)
-            self.generator_loss_epoch_total += generator_loss
-            self.generator_updates += 1
-            
-        grad_pnlt_loss = logs.get('generator_loss')
-        if not grad_pnlt_loss == 0.0:
-            self.grad_pnlt_batch_loss.append(grad_pnlt_loss)
-            self.grad_pnlt_batches.append(batch)
-            self.grad_pnlt_loss_epoch_total += grad_pnlt_loss
-            self.grad_pnlt_updates += 1

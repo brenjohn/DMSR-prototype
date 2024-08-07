@@ -128,8 +128,9 @@ def residual_block(x, channels):
 #%%
 class CriticNoiseSampler:
     
-    def __init__(self, critic, initial_std, epochs):
-        self.shape = critic.input.shape[2:]
+    def __init__(self, critic=None, initial_std=0, epochs=1):
+        if critic:
+            self.shape = critic.input.shape[2:]
         self.std_decrement = initial_std / epochs
         self.current_std = tf.Variable(initial_std, dtype=tf.float32)
     
@@ -143,3 +144,23 @@ class CriticNoiseSampler:
     def update(self):
         self.current_std.assign_sub(self.std_decrement)
         self.current_std.assign(tf.maximum(self.current_std, 0.0))
+        
+        
+    def get_config(self):
+        config = {
+            'shape'         : self.shape,
+            'std_decrement' : self.std_decrement,
+            'current_std'   : self.current_std.numpy()
+        }
+        return config
+    
+    @classmethod
+    def from_config(cls, config):
+        noise_sampler = cls()
+        noise_sampler.set_config(**config)
+        return noise_sampler
+    
+    def set_config(self, shape, std_decrement, current_std):
+        self.shape = tuple(shape)
+        self.std_decrement = std_decrement
+        self.current_std = tf.Variable(current_std, dtype=tf.float32)
