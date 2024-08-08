@@ -138,7 +138,7 @@ class DMSRGAN(keras.Model):
         self.critic.build(self.critic.input)
         
     
-    def supervised_dataset(self, dataset, batch_size):
+    def generator_supervised_dataset(self, dataset, batch_size):
         """
         Returns a new dataset with latent space samples added to the LR data
         from the given dataset. The new dataset can be used for supervised

@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 from dmsr.operations.resizing import crop_edge
 from dmsr.models.dmsr_gan.dmsr_gan import DMSRGAN
-from dmsr.models.dmsr_gan.dmsr_gan import DMSRMonitor
+from dmsr.models.dmsr_gan.dmsr_monitor import DMSRMonitor
 from dmsr.operations.augmentation import random_transformation
 
 
@@ -73,7 +73,7 @@ gan = DMSRGAN(**gan_args)
 
 
 #%%
-supervised_dataset = gan.supervised_dataset(dataset, batch_size)
+supervised_dataset = gan.generator_supervised_dataset(dataset, batch_size)
 
 gan.generator.compile(
     optimizer = keras.optimizers.Adam(learning_rate=0.00001, beta_1=0.0),
@@ -83,6 +83,20 @@ gan.generator.compile(
 
 #%%
 history_supervised = gan.generator.fit(supervised_dataset, epochs = 50)
+
+
+#%%
+critic_dataset = gan.critic_supervised_dataset(LR_data, HR_data)
+critic_dataset = critic_dataset.batch(14)
+
+gan.critic.compile(
+    optimizer = keras.optimizers.Adam(learning_rate=0.00001, beta_1=0.0),
+    loss      = keras.losses.MSE
+)
+
+
+#%%
+history_supervised = gan.critic.fit(critic_dataset, epochs = 50)
 
 
 #%%
@@ -102,8 +116,7 @@ LR_samples = LR_data[1:3, ...]
 HR_samples = HR_data[1:3, ...]
 cbk = DMSRMonitor(generator_noise, LR_samples, HR_samples)
 
-#%%
-history_gan = gan.fit(dataset, epochs=2048, callbacks=[cbk])
+history_gan = gan.fit(dataset, epochs=6144, callbacks=[cbk])
 
 
 #%%
