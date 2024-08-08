@@ -154,6 +154,31 @@ class DMSRGAN(keras.Model):
         return dataset.map(add_latent_sample)
     
     
+    def critic_supervised_dataset(self, LR_data, HR_data):
+        gen_inputs = [(field[None, ...], self.sampler(1)) for field in LR_data]
+        SR_data = [self.generator(x) for x in gen_inputs]
+        SR_data = tf.concat(SR_data, axis=0)
+        
+        US_data = scale_up_data(LR_data, scale=2)
+        US_data = crop_to_match(US_data, HR_data)
+        US_density = ngp_density_field(US_data, self.box_size)
+        US_data = tf.concat((US_density, US_data), axis=1)
+        
+        HR_density = ngp_density_field(HR_data, self.box_size)
+        real_data = tf.concat((HR_density, HR_data, US_data), axis=1)
+        real_labels = tf.ones(real_data.shape[0],)
+        
+        SR_density = ngp_density_field(SR_data, self.box_size)
+        fake_data = tf.concat((SR_density, SR_data, US_data), axis=1)
+        fake_labels = tf.zeros(fake_data.shape[0],)
+        
+        data = tf.concat((real_data, fake_data), axis=0)
+        labels = tf.concat((real_labels, fake_labels), axis=0)
+        
+        dataset = tf.data.Dataset.from_tensor_slices((data, labels))
+        return dataset.shuffle(len(dataset))
+    
+    
     @tf.function
     def critic_loss(self, real_logits, fake_logits):
         real_loss = tf.reduce_mean(real_logits)
