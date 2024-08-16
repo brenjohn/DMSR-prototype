@@ -4,10 +4,9 @@
 Created on Sun May 12 13:28:51 2024
 
 @author: brennan
-"""
 
-import os
-import numpy as np
+This file defines the DMSR-GAN (Dark Matter Super Resolution - GAN).
+"""
 
 import tensorflow as tf
 from tensorflow import keras
@@ -18,11 +17,59 @@ from ...operations.resizing import scale_up_data, crop_to_match
 from .dmsr_generator import build_generator, build_latent_space_sampler
 from .dmsr_critic import build_critic, CriticNoiseSampler
 
-# TODO I should use a factory pattern to initialise DMSRGAN objects in the init
-# and from_config methods to deal with the various possible arguments.
+# TODO: Remove the noise sampler for critic inputs. I don't think this is used
+# for balancing WGAN training. It is used for regular GAN training.
+
+# TODO: Use a factory pattern to build the components for the DMSRGAN and then
+# instantiate one. The constructor for the DMSRGAN should only take is 
+# attributes as input. Also, training related parameters should be set in the 
+# DMSRGAN's compile method.
+
+def build_dmsrgan(
+        LR_grid_size = 16, 
+        scale_factor = 2,
+        HR_box_size = 26.6,
+        generator_channels=256,
+        critic_channels=16,
+        critic_steps=5,
+        generator_steps=1,
+        gp_weight=10.0,
+        gp_rate=16,
+        noise_std = 0,
+        noise_epochs = 70,
+        **kwargs
+    ):
+    """
+    A factory function for building a DMSRGAN and its components.
+    """
+    # Build the generator model.
+    generator = build_generator(LR_grid_size, scale_factor, generator_channels)
+    sampler = build_latent_space_sampler(generator)
+    
+    # Build the critic model
+    critic = build_critic(generator, critic_channels)
+    noise_sampler = CriticNoiseSampler(critic, noise_std, noise_epochs)
+    
+    return DMSRGAN(generator, critic, sampler, noise_sampler)
+
+
 
 @keras.utils.register_keras_serializable()
 class DMSRGAN(keras.Model):
+    """
+    This class defines a WGAN-GP style model for enhancing the resolution of
+    a dark matter displacement field.
+    
+    Attributes:
+        - generator     : The WGAN generator model.
+        - critic        : The WGAN critic model.
+        - sampler       : A callable for sampling the generator latent space.
+        - noise_sampler : A callable for sampling noise for the critic input.
+        - critic_steps  : Number of critic updates before a generator update.
+        - gp_weight     : The weight for the gradient penalty term.
+        - gp_rate       : Gradient penalty is computed every 'gp_rate' steps. 
+        - box_size      : The size of the upscaled box in cm Mpc.
+    """
         
     def __init__(
             self,
@@ -32,6 +79,7 @@ class DMSRGAN(keras.Model):
             generator_channels=256,
             critic_channels=16,
             critic_steps=5,
+            generator_steps=1,
             gp_weight=10.0,
             gp_rate=16,
             noise_std = 0,
@@ -51,14 +99,15 @@ class DMSRGAN(keras.Model):
         )
         generator, sampler, critic, noise_sampler = components
         
-        self.generator     = generator
-        self.sampler       = sampler
-        self.critic        = critic
-        self.noise_sampler = noise_sampler
-        self.critic_steps  = critic_steps
-        self.gp_weight     = gp_weight
-        self.gp_rate       = gp_rate
-        self.box_size      = HR_box_size
+        self.generator       = generator
+        self.sampler         = sampler
+        self.critic          = critic
+        self.noise_sampler   = noise_sampler
+        self.critic_steps    = critic_steps
+        self.generator_steps = generator_steps
+        self.gp_weight       = gp_weight
+        self.gp_rate         = gp_rate
+        self.box_size        = HR_box_size
         
         self.batch_counter = tf.Variable(0, trainable=False, dtype=tf.float32)
         
@@ -84,137 +133,9 @@ class DMSRGAN(keras.Model):
         return generator, sampler, critic, noise_sampler
 
 
-    def compile(self, critic_optimizer, generator_optimizer):
-        # TODO: Does this not need an optimizer passed to it? I think the
-        # default optimizer is rmsprop.
-        super().compile()
-        self.critic_optimizer = critic_optimizer
-        self.generator_optimizer = generator_optimizer
-        
-    
-    def get_config(self):
-        config = super(DMSRGAN, self).get_config()
-        config.update({
-            'generator'     : self.generator.get_config(),
-            'critic'        : self.critic.get_config(),
-            'critic_steps'  : self.critic_steps,
-            'gp_weight'     : self.gp_weight,
-            'gp_rate'       : self.gp_rate,
-            'box_size'      : self.box_size,
-            'noise_sampler' : self.noise_sampler.get_config(),
-            'batch_counter' : self.batch_counter.numpy()
-        })
-        return config
-
-
-    @classmethod
-    def from_config(cls, config):
-        dmsr_gan = cls(**config)
-        dmsr_gan.set_config(config)
-        return dmsr_gan
-    
-    
-    def set_config(self, config):
-
-        config['noise_sampler'] = CriticNoiseSampler.from_config(
-            config['noise_sampler']
-        )
-        
-        self.noise_sampler = config['noise_sampler']
-        self.critic_steps  = config['critic_steps']
-        self.gp_weight     = config['gp_weight']
-        self.gp_rate       = config['gp_rate']
-        self.box_size      = config['box_size']
-        self.batch_counter = tf.Variable(
-            config['batch_counter'], trainable=False, dtype=tf.float32
-        )
-        
-        sampler = build_latent_space_sampler(self.generator)
-        self.sampler = sampler
-        
-    
-    def build(self):
-        self.generator.build(self.generator.input)
-        self.critic.build(self.critic.input)
-        
-    
-    def generator_supervised_dataset(self, dataset, batch_size):
-        """
-        Returns a new dataset with latent space samples added to the LR data
-        from the given dataset. The new dataset can be used for supervised
-        training of a generator to learn to predict the HR data from the LR
-        data.
-        """
-        
-        def add_latent_sample(LR_fields, HR_fields):
-            lantent_variables = self.sampler(batch_size)
-            LR_fields = (LR_fields, ) + lantent_variables
-            return LR_fields, HR_fields
-        
-        return dataset.map(add_latent_sample)
-    
-    
-    def critic_supervised_dataset(self, LR_data, HR_data):
-        gen_inputs = [(field[None, ...], self.sampler(1)) for field in LR_data]
-        SR_data = [self.generator(x) for x in gen_inputs]
-        SR_data = tf.concat(SR_data, axis=0)
-        
-        US_data = scale_up_data(LR_data, scale=2)
-        US_data = crop_to_match(US_data, HR_data)
-        US_density = ngp_density_field(US_data, self.box_size)
-        US_data = tf.concat((US_density, US_data), axis=1)
-        
-        HR_density = ngp_density_field(HR_data, self.box_size)
-        real_data = tf.concat((HR_density, HR_data, US_data), axis=1)
-        real_labels = tf.ones(real_data.shape[0],)
-        
-        SR_density = ngp_density_field(SR_data, self.box_size)
-        fake_data = tf.concat((SR_density, SR_data, US_data), axis=1)
-        fake_labels = tf.zeros(fake_data.shape[0],)
-        
-        data = tf.concat((real_data, fake_data), axis=0)
-        labels = tf.concat((real_labels, fake_labels), axis=0)
-        
-        dataset = tf.data.Dataset.from_tensor_slices((data, labels))
-        return dataset.shuffle(len(dataset))
-    
-    
-    @tf.function
-    def critic_loss(self, real_logits, fake_logits):
-        real_loss = tf.reduce_mean(real_logits)
-        fake_loss = tf.reduce_mean(fake_logits)
-        return fake_loss - real_loss
-    
-    
-    @tf.function
-    def generator_loss(self, fake_logits):
-        return -tf.reduce_mean(fake_logits)
-    
-    
-    @tf.function
-    def interpolate(self, real_data, fake_data):
-        """
-        """
-        batch_size = tf.shape(real_data)[0]
-        eps = tf.random.uniform([batch_size, 1, 1, 1, 1])
-        diff = fake_data - real_data
-        return real_data + eps * diff
-    
-    
-    @tf.function
-    def prepare_critic_data(self, data, US_data, batch_size):
-        """
-        Prepares the given data to be passed to the critic model.
-        
-        The data is augmented with noise, determined be the noise_sampler, and
-        then concatenated with both the US data it's conditioned on and a 
-        density field computed from the data.
-        """
-        data = data + self.noise_sampler(batch_size)
-        density = ngp_density_field(data, self.box_size)
-        data = tf.concat((density, data, US_data), axis=1)
-        return data
-
+    # =========================================================================
+    #                         Training Methods
+    # =========================================================================
 
     @tf.function
     def train_step(self, LR_HR_data):
@@ -233,15 +154,19 @@ class DMSRGAN(keras.Model):
         US_density = ngp_density_field(US_data, self.box_size)
         US_data = tf.concat((US_density, US_data), axis=1)
         
-        # Train the critic model first and retain the critic loss.
-        critic_loss, gp_loss = self.critic_train_step(
-            LR_data, US_data, HR_data
-        )
         losses = {
-            "critic_loss"      : critic_loss,
-            "generator_loss"   : 1.0,
-            "gradient_penalty" : gp_loss
+            "critic_loss"      : 2.0,
+            "generator_loss"   : 2.0,
+            "gradient_penalty" : -1.0
         }
+        
+        # Train the critic model first and retain the critic loss.
+        if tf.equal(self.batch_counter % self.generator_steps, 0.0):
+            critic_loss, gp_loss = self.critic_train_step(
+                LR_data, US_data, HR_data
+            )
+            losses["critic_loss"] = critic_loss
+            losses["gradient_penalty"] = gp_loss
            
         # Train the generator model and get the generator loss
         if tf.equal(self.batch_counter % self.critic_steps, 0.0):
@@ -359,3 +284,125 @@ class DMSRGAN(keras.Model):
         )
         
         return gen_loss
+    
+    
+    # =========================================================================
+    #                      Training Utility Methods
+    # =========================================================================
+    
+    @tf.function
+    def critic_loss(self, real_logits, fake_logits):
+        real_loss = tf.reduce_mean(real_logits)
+        fake_loss = tf.reduce_mean(fake_logits)
+        return fake_loss - real_loss
+    
+    
+    @tf.function
+    def generator_loss(self, fake_logits):
+        return -tf.reduce_mean(fake_logits)
+    
+    
+    @tf.function
+    def interpolate(self, real_data, fake_data):
+        """
+        Returns a tensor obtained by linearly interpolating between the given
+        tensors a random amount. This is used for computing the gradient 
+        penalty term during training.
+        """
+        batch_size = tf.shape(real_data)[0]
+        eps = tf.random.uniform([batch_size, 1, 1, 1, 1])
+        diff = fake_data - real_data
+        return real_data + eps * diff
+    
+    
+    @tf.function
+    def prepare_critic_data(self, data, US_data, batch_size):
+        """
+        Prepares the given data to be passed to the critic model.
+        
+        The data is augmented with noise, determined be the noise_sampler, and
+        then concatenated with both the US data it's conditioned on and a 
+        density field computed from the data.
+        """
+        data = data + self.noise_sampler(batch_size)
+        density = ngp_density_field(data, self.box_size)
+        data = tf.concat((density, data, US_data), axis=1)
+        return data
+    
+    
+    # =========================================================================
+    #                          Utility Methods
+    # =========================================================================
+
+    def compile(self, critic_optimizer, generator_optimizer):
+        super().compile()
+        self.critic_optimizer = critic_optimizer
+        self.generator_optimizer = generator_optimizer
+        
+    
+    def get_config(self):
+        config = super(DMSRGAN, self).get_config()
+        config.update({
+            'generator'     : self.generator.get_config(),
+            'critic'        : self.critic.get_config(),
+            'critic_steps'  : self.critic_steps,
+            'gp_weight'     : self.gp_weight,
+            'gp_rate'       : self.gp_rate,
+            'box_size'      : self.box_size,
+            'noise_sampler' : self.noise_sampler.get_config(),
+            'batch_counter' : self.batch_counter.numpy()
+        })
+        return config
+
+
+    @classmethod
+    def from_config(cls, config):
+        dmsr_gan = cls(**config)
+        dmsr_gan.set_config(config)
+        return dmsr_gan
+    
+    
+    def set_config(self, config):
+        config['noise_sampler'] = CriticNoiseSampler.from_config(
+            config['noise_sampler']
+        )
+        
+        self.noise_sampler = config['noise_sampler']
+        self.critic_steps  = config['critic_steps']
+        self.gp_weight     = config['gp_weight']
+        self.gp_rate       = config['gp_rate']
+        self.box_size      = config['box_size']
+        self.batch_counter = tf.Variable(
+            config['batch_counter'], trainable=False, dtype=tf.float32
+        )
+        
+        sampler = build_latent_space_sampler(self.generator)
+        self.sampler = sampler
+        
+    
+    def build(self):
+        self.generator.build(self.generator.input)
+        self.critic.build(self.critic.input)
+        
+        
+    def create_checkpoint(self, checkpoint_prefix):
+        checkpoint = tf.train.Checkpoint(
+            generator           = self.generator,
+            critic              = self.critic,
+            generator_optimizer = self.generator_optimizer,
+            critic_optimizer    = self.critic_optimizer,
+            batch_counter       = self.batch_counter
+        )
+        return checkpoint
+    
+
+    
+class DMSRGANCheckpoint(tf.keras.callbacks.Callback):
+    def __init__(self, checkpoint, checkpoint_prefix):
+        super(DMSRGANCheckpoint, self).__init__()
+        self.checkpoint = checkpoint
+        self.checkpoint_prefix = checkpoint_prefix
+
+    def on_epoch_end(self, epoch, logs=None):
+        file_prefix=self.checkpoint_prefix.format(epoch=epoch)
+        self.checkpoint.save(file_prefix=file_prefix)

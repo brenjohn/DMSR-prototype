@@ -105,20 +105,21 @@ class DMSRMonitor(keras.callbacks.Callback):
         batch = self.batch
         
         critic_loss = logs.get('critic_loss')
-        self.critic_batch_loss.append(critic_loss)
-        self.critic_batches.append(batch)
-        self.critic_loss_epoch_total += critic_loss
-        self.critic_updates += 1
+        if not critic_loss == 2.0:
+            self.critic_batch_loss.append(critic_loss)
+            self.critic_batches.append(batch)
+            self.critic_loss_epoch_total += critic_loss
+            self.critic_updates += 1
         
         generator_loss = logs.get('generator_loss')
-        if not generator_loss == 1.0:
+        if not generator_loss == 2.0:
             self.generator_batch_loss.append(generator_loss)
             self.generator_batches.append(batch)
             self.generator_loss_epoch_total += generator_loss
             self.generator_updates += 1
             
-        grad_pnlt_loss = logs.get('generator_loss')
-        if not grad_pnlt_loss == 0.0:
+        grad_pnlt_loss = logs.get('gradient_penalty')
+        if not grad_pnlt_loss == -1.0:
             self.grad_pnlt_batch_loss.append(grad_pnlt_loss)
             self.grad_pnlt_batches.append(batch)
             self.grad_pnlt_loss_epoch_total += grad_pnlt_loss

@@ -136,13 +136,6 @@ def HBlock(x_p, y_p, noiseA, noiseB, in_channels, out_channels):
     p = HBlock_projection(x_n)
     
     y_n = UpSampling3D(size=2, data_format='channels_first')(y_p)
-    # y_n = Conv3DTranspose(
-    #     3, 
-    #     kernel_size=4, 
-    #     strides=2, 
-    #     padding='same', 
-    #     data_format='channels_first'
-    # )(y_p)
     y_n = Cropping3D(2, data_format='channels_first')(y_n)
     
     return x_n, y_n + p
@@ -186,13 +179,6 @@ def HBlock_conv(x, noiseA, noiseB, in_channels, out_channels):
     
     # Upsample.
     x = UpSampling3D(size=2, data_format='channels_first')(x)
-    # x = Conv3DTranspose(
-    #     in_channels, 
-    #     kernel_size=4, 
-    #     strides=2, 
-    #     padding='same', 
-    #     data_format='channels_first'
-    # )(x)
     x = Conv3D(out_channels, 3, data_format='channels_first')(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
 
@@ -226,3 +212,18 @@ def build_latent_space_sampler(model):
         return samples
     
     return sampler
+
+
+def generator_supervised_dataset(dataset, batch_size, sampler):
+    """
+    Returns a new dataset with latent space samples added to the LR data
+    from the given dataset. The new dataset can be used for supervised
+    training of a generator to learn to predict the HR data from the LR
+    data.
+    """
+    def add_latent_sample(LR_fields, HR_fields):
+        lantent_variables = sampler(batch_size)
+        LR_fields = (LR_fields, ) + lantent_variables
+        return LR_fields, HR_fields
+    
+    return dataset.map(add_latent_sample)

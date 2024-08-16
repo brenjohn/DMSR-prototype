@@ -58,19 +58,25 @@ def plot_samples(output_dir, step, save=False):
     (LR_xs, LR_ys), (SR_xs, SR_ys), (HR_xs, HR_ys) = positions
     
     # Create a figure
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 7))
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 14))
     
     # LR scatter plot
-    ax1.scatter(LR_xs, LR_ys, alpha=0.2, s=0.4)
+    ax1.scatter(LR_xs, LR_ys, alpha=0.2, s=0.5)
     ax1.set_title('LR')
     
     # SR scatter plot
-    ax2.scatter(SR_xs, SR_ys, alpha=0.2, s=0.4)
+    ax2.scatter(SR_xs, SR_ys, alpha=0.2, s=0.5)
     ax2.set_title('SR')
     
     # HR scatter plot
-    ax3.scatter(HR_xs, HR_ys, alpha=0.2, s=0.4)
+    ax3.scatter(HR_xs, HR_ys, alpha=0.2, s=0.5)
     ax3.set_title('HR')
+    
+    # SR scatter plot
+    ax4.scatter(SR_xs, SR_ys, alpha=0.2, s=0.5)
+    ax4.set_title('SR')
+    ax4.set_xlim(ax3.get_xlim())
+    ax4.set_ylim(ax3.get_ylim())
     
     # Add title and adjust layout
     fig.suptitle(f'Epoch {step}')
@@ -97,6 +103,11 @@ outputs_dir = 'data/training_outputs/'
 output_dirs = glob.glob(outputs_dir + 'step_*')
 output_dirs = np.sort(output_dirs)
 
-for output in output_dirs:
+existing_plots = glob.glob('plots/training_samples/output_*')
+existing_steps = [plot.split('.')[0].split('_')[-1] for plot in existing_plots]
+new_outputs = [output for output in output_dirs 
+               if not output.split('_')[-1] in existing_steps]
+
+for output in new_outputs:
     step = int(output.split('_')[-1])
     plot_samples(output, step, save=True)

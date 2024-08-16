@@ -13,7 +13,6 @@ def cic_density_field(positions, box_length):
     """
     Create a density field using the cloud in cells (CIC) method
     """
-    
     N = positions.shape[0] # The grid size
     density = tf.zeros((N, N, N))
     cell_size = box_length / N
@@ -47,7 +46,6 @@ def ngp_density_field_first(positions, box_length):
     """
     Create a density field using the nearest grid point (ngp) method
     """
-    
     data_shape = tf.shape(positions)
     batch_size, grid_size = data_shape[0], data_shape[-1]
     density = tf.zeros((batch_size, grid_size, grid_size, grid_size))
@@ -77,7 +75,6 @@ def ngp_density_field_old(positions, box_length):
     """
     Create a density field using the nearest grid point (ngp) method
     """
-    
     N = positions.shape[0] # The grid size
     density = np.zeros((N, N, N))
     cell_size = box_length / N
@@ -97,7 +94,6 @@ def ngp_density_field_tmp(positions, box_length):
     """
     Create a density field using the nearest grid point (ngp) method
     """
-    
     data_shape = tf.shape(positions)
     batch_size, grid_size = data_shape[0], data_shape[1]
     density = tf.zeros((batch_size, grid_size, grid_size, grid_size))
@@ -115,7 +111,7 @@ def ngp_density_field_tmp(positions, box_length):
     return density
 
 
-@tf.function(experimental_compile=True)
+@tf.function
 def ngp_density_field(positions, box_length, periodic=False):
     """
     Compute the density field using the nearest grid point method for a batch 
@@ -131,7 +127,6 @@ def ngp_density_field(positions, box_length, periodic=False):
     - density_field: A tensor of shape (batch_size, *grid_shape) representing 
                      the density field for each batch.
     """
-    
     data_shape = tf.shape(positions)
     batch_size, grid_size = data_shape[0], data_shape[-1]
     cell_size = tf.cast(
@@ -178,9 +173,11 @@ def ngp_density_field(positions, box_length, periodic=False):
     # Compute unique grid indices for the entire batch
     updates = tf.ones((tf.shape(indices)[0],), dtype=tf.float32)
     
-    # Create a dense grid tensor for the entire batch
+    # Create a dense grid tensor for the entire batch.
+    # Normalise to have M tot = 1
     density_shape = (batch_size, grid_size, grid_size, grid_size)
     density_field = tf.scatter_nd(indices, updates, shape=density_shape)
+    density_field /= tf.cast(grid_size**3, dtype=tf.float32)
     
     return density_field[:, None, ...]
 

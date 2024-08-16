@@ -23,12 +23,11 @@ def scale_up_data(data, scale, batch=False):
     return data
 
 
-def cut_fields(fields, cut_size, grid_size, step=0, pad=0):
+def cut_field(field, cut_size, grid_size, step=0, pad=0):
     """
     
     """
     cuts = []
-    
     if not step:
         step = cut_size
     
@@ -36,20 +35,15 @@ def cut_fields(fields, cut_size, grid_size, step=0, pad=0):
         for j in range(0, grid_size, step):
             for k in range(0, grid_size, step):
                 
-                slice_x = slice(
-                    (i - pad) % (grid_size + 1), 
-                    (i + cut_size + pad) % (grid_size + 1)
-                )
-                slice_y = slice(
-                    (j - pad) % (grid_size + 1), 
-                    (j + cut_size + pad) % (grid_size + 1)
-                )
-                slice_z = slice(
-                    (k - pad) % (grid_size + 1), 
-                    (k + cut_size + pad) % (grid_size + 1)
-                )
+                slice_x = [n % grid_size for n in range(i-pad, i+cut_size+pad)]
+                slice_y = [n % grid_size for n in range(j-pad, j+cut_size+pad)]
+                slice_z = [n % grid_size for n in range(k-pad, k+cut_size+pad)]
                 
-                cuts.append(fields[:, :, slice_x, slice_y, slice_z])
+                patch = np.take(field, slice_x, axis=2)
+                patch = np.take(patch, slice_y, axis=3)
+                patch = np.take(patch, slice_z, axis=4)
+                
+                cuts.append(patch)
     
     return np.concatenate(cuts)
 

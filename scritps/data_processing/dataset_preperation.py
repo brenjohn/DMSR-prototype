@@ -15,16 +15,17 @@ import h5py as h5
 import numpy as np
 
 from dmsr.swift_processing import get_displacement_field
-from dmsr.operations.resizing import cut_fields
+from dmsr.operations.resizing import cut_field
 
 
-def get_displacement_fields(snapshots):
+def read_snapshot(snapshots):
     displacement_fields = []
     
     for snap in snapshots:
         data = h5.File(snap, 'r')
         grid_size   = data['ICs_parameters'].attrs['Grid Resolution']
         box_size    = data['Header'].attrs['BoxSize'][0]
+        mass        = data['DMParticles']['Masses'][0]
         IDs         = np.asarray(data['DMParticles']['ParticleIDs'])
         coordinates = np.asarray(data['DMParticles']['Coordinates'])
         coordinates = coordinates.transpose()
@@ -33,7 +34,7 @@ def get_displacement_fields(snapshots):
         )
         data.close()
         
-    return np.stack(displacement_fields), box_size, grid_size
+    return np.stack(displacement_fields), box_size, grid_size, mass
 
 
 #%%
@@ -44,13 +45,17 @@ HR_snapshots = np.sort(glob.glob(data_directory + '*/128/snap_0002.hdf5'))
 
 
 #%%
-LR_fields, box_size, LR_grid_size = get_displacement_fields(LR_snapshots)
-HR_fields, box_size, HR_grid_size = get_displacement_fields(HR_snapshots)
+LR_fields, box_size, LR_grid_size, LR_mass = read_snapshot(LR_snapshots)
+HR_fields, box_size, HR_grid_size, HR_mass = read_snapshot(HR_snapshots)
 
 
 #%%
-LR_fields = cut_fields(LR_fields, 16, LR_grid_size)
-HR_fields = cut_fields(HR_fields, 32, HR_grid_size)
+padding = 2
+LR_patch_size = 16
+HR_patch_size = 32
+
+LR_fields = cut_field(LR_fields, LR_patch_size, LR_grid_size, pad=padding)
+HR_fields = cut_field(HR_fields, HR_patch_size, HR_grid_size)
 
 
 #%%
@@ -61,4 +66,6 @@ HR_file = '../../data/dmsr_training/HR_fields.npy'
 np.save(HR_file, HR_fields)
 
 meta_file = '../../data/dmsr_training/metadata.npy'
-np.save(meta_file, [box_size/4, LR_grid_size//4, HR_grid_size//4])
+LR_size = LR_patch_size + 2 * padding
+HR_size = HR_patch_size
+np.save(meta_file, [box_size, box_size/4, LR_size, HR_size, LR_mass, HR_mass])
