@@ -15,15 +15,9 @@ from ...operations.particle_density import ngp_density_field
 from ...operations.resizing import scale_up_data, crop_to_match
 
 from .dmsr_generator import build_generator, build_latent_space_sampler
-from .dmsr_critic import build_critic, CriticNoiseSampler
+from .dmsr_critic import build_critic
 
-# TODO: Remove the noise sampler for critic inputs. I don't think this is used
-# for balancing WGAN training. It is used for regular GAN training.
 
-# TODO: Use a factory pattern to build the components for the DMSRGAN and then
-# instantiate one. The constructor for the DMSRGAN should only take is 
-# attributes as input. Also, training related parameters should be set in the 
-# DMSRGAN's compile method.
 
 def build_dmsrgan(
         LR_grid_size = 16, 
@@ -31,12 +25,6 @@ def build_dmsrgan(
         HR_box_size = 26.6,
         generator_channels=256,
         critic_channels=16,
-        critic_steps=5,
-        generator_steps=1,
-        gp_weight=10.0,
-        gp_rate=16,
-        noise_std = 0,
-        noise_epochs = 70,
         **kwargs
     ):
     """
@@ -44,13 +32,11 @@ def build_dmsrgan(
     """
     # Build the generator model.
     generator = build_generator(LR_grid_size, scale_factor, generator_channels)
-    sampler = build_latent_space_sampler(generator)
     
     # Build the critic model
     critic = build_critic(generator, critic_channels)
-    noise_sampler = CriticNoiseSampler(critic, noise_std, noise_epochs)
     
-    return DMSRGAN(generator, critic, sampler, noise_sampler)
+    return DMSRGAN(generator, critic, HR_box_size)
 
 
 
@@ -63,74 +49,52 @@ class DMSRGAN(keras.Model):
     Attributes:
         - generator     : The WGAN generator model.
         - critic        : The WGAN critic model.
-        - sampler       : A callable for sampling the generator latent space.
-        - noise_sampler : A callable for sampling noise for the critic input.
+        - box_size      : The size of the upscaled box in cm Mpc.
+        
+    Training Attributes:
+        - generator_optimizer : optimizer for the generator model.
+        - critic_optimizer    : optimizer for the critic model.
         - critic_steps  : Number of critic updates before a generator update.
         - gp_weight     : The weight for the gradient penalty term.
-        - gp_rate       : Gradient penalty is computed every 'gp_rate' steps. 
-        - box_size      : The size of the upscaled box in cm Mpc.
-    """
+        - gp_rate       : Gradient penalty is computed every 'gp_rate' steps.
         
+    Other Attributes:
+        - sampler       : A callable for sampling the generator latent space.
+        - batch_counter : A counter tracking the number of batches used.
+    """
+    
     def __init__(
             self,
-            LR_grid_size = 16, 
-            scale_factor = 2,
-            HR_box_size = 26.6,
-            generator_channels=256,
-            critic_channels=16,
-            critic_steps=5,
-            generator_steps=1,
-            gp_weight=10.0,
-            gp_rate=16,
-            noise_std = 0,
-            noise_epochs = 70,
+            generator,
+            critic,
+            box_size,
             **kwargs
         ):
-        
         super().__init__()
-        
-        components = self.build_components(
-            LR_grid_size, 
-            scale_factor, 
-            generator_channels, 
-            critic_channels, 
-            noise_std,
-            noise_epochs
-        )
-        generator, sampler, critic, noise_sampler = components
-        
-        self.generator       = generator
-        self.sampler         = sampler
-        self.critic          = critic
-        self.noise_sampler   = noise_sampler
-        self.critic_steps    = critic_steps
-        self.generator_steps = generator_steps
-        self.gp_weight       = gp_weight
-        self.gp_rate         = gp_rate
-        self.box_size        = HR_box_size
+        self.generator = generator
+        self.critic    = critic
+        self.box_size  = box_size
         
         self.batch_counter = tf.Variable(0, trainable=False, dtype=tf.float32)
-        
-        
-    @classmethod
-    def build_components(
-            cls,
-            LR_grid_size, 
-            scale_factor,
-            generator_channels=256,
-            critic_channels=16,
-            noise_std = 2,
-            noise_epochs = 70
+    
+    
+    def compile(
+            self, 
+            critic_optimizer, 
+            generator_optimizer,
+            critic_steps=5,
+            gp_weight=10.0,
+            gp_rate=16,
         ):
+        super().compile()
+        self.generator_optimizer = generator_optimizer
+        self.critic_optimizer    = critic_optimizer
+        self.critic_steps        = critic_steps
+        self.gp_weight           = gp_weight
+        self.gp_rate             = gp_rate
         
-        generator = build_generator(
-            LR_grid_size, scale_factor, generator_channels
-        )
-        critic = build_critic(generator, critic_channels)
-        noise_sampler = CriticNoiseSampler(critic, noise_std, noise_epochs)
-        sampler = build_latent_space_sampler(generator)
-        
-        return generator, sampler, critic, noise_sampler
+        generator_input_shapes = [x.shape for x in self.generator.inputs]
+        self.sampler = build_latent_space_sampler(generator_input_shapes)
 
 
     # =========================================================================
@@ -152,26 +116,26 @@ class DMSRGAN(keras.Model):
         US_data = scale_up_data(LR_data, scale=2)
         US_data = crop_to_match(US_data, HR_data)
         US_density = ngp_density_field(US_data, self.box_size)
-        US_data = tf.concat((US_density, US_data), axis=1)
+        US_data = tf.concat((US_density, US_data), axis=-1)
         
         losses = {
-            "critic_loss"      : 2.0,
-            "generator_loss"   : 2.0,
-            "gradient_penalty" : -1.0
+            "critic_loss"      : 0.0,
+            "generator_loss"   : 0.0,
+            "gradient_penalty" : 0.0
         }
         
+        # Train the generator model and get the generator loss
+        if tf.equal(self.batch_counter % self.critic_steps, 0.0):
+            gen_loss = self.generator_train_step(LR_data, US_data)
+            losses["generator_loss"] = gen_loss
+            
         # Train the critic model first and retain the critic loss.
-        if tf.equal(self.batch_counter % self.generator_steps, 0.0):
+        else:
             critic_loss, gp_loss = self.critic_train_step(
                 LR_data, US_data, HR_data
             )
             losses["critic_loss"] = critic_loss
             losses["gradient_penalty"] = gp_loss
-           
-        # Train the generator model and get the generator loss
-        if tf.equal(self.batch_counter % self.critic_steps, 0.0):
-            gen_loss = self.generator_train_step(LR_data, US_data)
-            losses["generator_loss"] = gen_loss
         
         self.batch_counter.assign_add(1)
         return losses
@@ -190,8 +154,8 @@ class DMSRGAN(keras.Model):
         SR_data = self.generator(generator_inputs)
         
         # Add the density and US fields to data to be passed to the critic.
-        HR_data = self.prepare_critic_data(HR_data, US_data, batch_size)
-        SR_data = self.prepare_critic_data(SR_data, US_data, batch_size)
+        HR_data = self.prepare_critic_data(HR_data, US_data)
+        SR_data = self.prepare_critic_data(SR_data, US_data)
         
         # Compute the critic loss
         with tf.GradientTape() as tape:
@@ -269,9 +233,8 @@ class DMSRGAN(keras.Model):
         # Calculate the generator loss.
         with tf.GradientTape() as tape:
             SR_data     = self.generator(generator_inputs)
-            SR_data     = SR_data + self.noise_sampler(batch_size)
             SR_density  = ngp_density_field(SR_data, self.box_size)
-            SR_data     = tf.concat((SR_density, SR_data, US_data), axis=1)
+            SR_data     = tf.concat((SR_density, SR_data, US_data), axis=-1)
             fake_logits = self.critic(SR_data)
             gen_loss    = self.generator_loss(fake_logits)
 
@@ -316,29 +279,21 @@ class DMSRGAN(keras.Model):
     
     
     @tf.function
-    def prepare_critic_data(self, data, US_data, batch_size):
+    def prepare_critic_data(self, data, US_data):
         """
         Prepares the given data to be passed to the critic model.
         
-        The data is augmented with noise, determined be the noise_sampler, and
-        then concatenated with both the US data it's conditioned on and a 
-        density field computed from the data.
+        The data is concatenated with both the US data it's conditioned on and
+        a density field computed from the data.
         """
-        data = data + self.noise_sampler(batch_size)
         density = ngp_density_field(data, self.box_size)
-        data = tf.concat((density, data, US_data), axis=1)
+        data = tf.concat((density, data, US_data), axis=-1)
         return data
     
     
     # =========================================================================
     #                          Utility Methods
     # =========================================================================
-
-    def compile(self, critic_optimizer, generator_optimizer):
-        super().compile()
-        self.critic_optimizer = critic_optimizer
-        self.generator_optimizer = generator_optimizer
-        
     
     def get_config(self):
         config = super(DMSRGAN, self).get_config()
@@ -349,9 +304,11 @@ class DMSRGAN(keras.Model):
             'gp_weight'     : self.gp_weight,
             'gp_rate'       : self.gp_rate,
             'box_size'      : self.box_size,
-            'noise_sampler' : self.noise_sampler.get_config(),
             'batch_counter' : self.batch_counter.numpy()
         })
+        
+        generator_input_shapes = [x.shape for x in self.generator.inputs]
+        config.update({'generator_input_shapes' : generator_input_shapes})
         return config
 
 
@@ -363,11 +320,6 @@ class DMSRGAN(keras.Model):
     
     
     def set_config(self, config):
-        config['noise_sampler'] = CriticNoiseSampler.from_config(
-            config['noise_sampler']
-        )
-        
-        self.noise_sampler = config['noise_sampler']
         self.critic_steps  = config['critic_steps']
         self.gp_weight     = config['gp_weight']
         self.gp_rate       = config['gp_rate']
@@ -376,33 +328,10 @@ class DMSRGAN(keras.Model):
             config['batch_counter'], trainable=False, dtype=tf.float32
         )
         
-        sampler = build_latent_space_sampler(self.generator)
-        self.sampler = sampler
+        generator_input_shapes = config['generator_input_shapes']
+        self.sampler = build_latent_space_sampler(generator_input_shapes)
         
     
     def build(self):
         self.generator.build(self.generator.input)
         self.critic.build(self.critic.input)
-        
-        
-    def create_checkpoint(self, checkpoint_prefix):
-        checkpoint = tf.train.Checkpoint(
-            generator           = self.generator,
-            critic              = self.critic,
-            generator_optimizer = self.generator_optimizer,
-            critic_optimizer    = self.critic_optimizer,
-            batch_counter       = self.batch_counter
-        )
-        return checkpoint
-    
-
-    
-class DMSRGANCheckpoint(tf.keras.callbacks.Callback):
-    def __init__(self, checkpoint, checkpoint_prefix):
-        super(DMSRGANCheckpoint, self).__init__()
-        self.checkpoint = checkpoint
-        self.checkpoint_prefix = checkpoint_prefix
-
-    def on_epoch_end(self, epoch, logs=None):
-        file_prefix=self.checkpoint_prefix.format(epoch=epoch)
-        self.checkpoint.save(file_prefix=file_prefix)

@@ -4,6 +4,9 @@
 Created on Wed Aug  7 13:07:54 2024
 
 @author: john
+
+This file defines the DMSR-Monitor class for tracking the various losses
+and outputing example genertaor samples during DMSRGAN training.
 """
 
 import os
@@ -14,41 +17,94 @@ from tensorflow import keras
 
 
 class DMSRMonitor(keras.callbacks.Callback):
+    """
+    DMSRMonitor objects are used to track the different loss values during
+    DMSRGAN training. Namely, it tracks the critic loss, generator loss and
+    gradient penalty values while ignoring batch updates where these terms are 
+    not computed. An average of these values for every epoch is also 
+    maintained. Additionally, sample outputs from the generator are also
+    regularly written to disk.
     
+    Arguments:
+        - generator_noise : Latent space samples for producing generator 
+                            samples.
+                            
+        - LR_samples      : Low resolution samples for producing generator 
+                            samples.
+                            
+        - HR_samples      : High resoution samples for comparison with 
+                            generator samples.
+                            
+        - output_rate     : Generator samples are saved every `output_rate` 
+                            epochs.
+        
+    Attributes
+        - critic_epoch_loss    : List of epoch averaged citic loss values.
+        
+        - critic_batch_loss    : List of critic loss values.
+        
+        - critic_batches       : List of batches where the critic loss was 
+                                 computed.
+                                 
+        - critic_epochs        : List of batches marking where epoch averaged
+                                 critic loss values were computed.
+                                 
+        - generator_epoch_loss : List of epoch averaged generator loss values.
+        
+        - generator_batch_loss : List of generator loss values.
+        
+        - generator_batches    : List of batches where the generator loss was 
+                                 computed.
+                                 
+        - generator_epochs     : List of batches marking where epoch averaged
+                                 generator loss values were computed.
+                                 
+        - grad_pnlt_epoch_loss : List of epoch averaged gradient penalty 
+                                 values.
+                                 
+        - grad_pnlt_batch_loss : List of gradient penalty values.
+        
+        - grad_pnlt_batches    : List of batches where the gradient penalty was 
+                                 computed.
+                                 
+        - grad_pnlt_epochs     : List of batches marking where epoch averaged
+                                 gardient penalty values were computed.
+    """
     def __init__(
             self, 
             generator_noise, 
             LR_samples, 
             HR_samples, 
-            output_rate=10
+            output_rate=10,
+            data_dir = 'data/training_outputs/'
         ):
         
-        self.noise = generator_noise
-        self.LR_samples = LR_samples
-        self.HR_samples = HR_samples
+        self.noise       = generator_noise
+        self.LR_samples  = LR_samples
+        self.HR_samples  = HR_samples
         self.num_samples = tf.shape(LR_samples)[0]
-        self.data_dir = 'data/training_outputs/'
+        self.data_dir    = data_dir
         
-        self.critic_epoch_loss = []
-        self.critic_batch_loss = []
-        self.critic_batches = []
-        self.critic_epochs = []
+        self.critic_epoch_loss       = []
+        self.critic_batch_loss       = []
+        self.critic_batches          = []
+        self.critic_epochs           = []
         self.critic_loss_epoch_total = 0.0
-        self.critic_updates = 0
+        self.critic_updates          = 0
         
-        self.generator_epoch_loss = []
-        self.generator_batch_loss = []
-        self.generator_batches = []
-        self.generator_epochs = []
+        self.generator_epoch_loss       = []
+        self.generator_batch_loss       = []
+        self.generator_batches          = []
+        self.generator_epochs           = []
         self.generator_loss_epoch_total = 0.0
-        self.generator_updates = 0
+        self.generator_updates          = 0
         
-        self.grad_pnlt_epoch_loss = []
-        self.grad_pnlt_batch_loss = []
-        self.grad_pnlt_batches = []
-        self.grad_pnlt_epochs = []
+        self.grad_pnlt_epoch_loss       = []
+        self.grad_pnlt_batch_loss       = []
+        self.grad_pnlt_batches          = []
+        self.grad_pnlt_epochs           = []
         self.grad_pnlt_loss_epoch_total = 0.0
-        self.grad_pnlt_updates = 0
+        self.grad_pnlt_updates          = 0
         
         self.batch = 0
         self.epoch = 0
@@ -56,7 +112,10 @@ class DMSRMonitor(keras.callbacks.Callback):
     
     
     def on_epoch_end(self, epoch, logs=None):
-        
+        """
+        Records the average loss values for the last epoch and saves
+        generator samples from the current generator.
+        """
         self.epoch += 1
         epoch = self.epoch
         
@@ -81,9 +140,17 @@ class DMSRMonitor(keras.callbacks.Callback):
         self.grad_pnlt_loss_epoch_total = 0.0
         self.grad_pnlt_updates = 0
         
+        # Check if generator output should be produced.
         if not (epoch % self.output_rate == 0):
             return
         
+        # self.save_generator_samples(epoch)
+    
+    
+    def save_generator_samples(self, epoch):
+        """
+        Saves generator samples from the current generator.
+        """
         generator_inputs = (self.LR_samples,) + self.noise
         SR_samples = self.model.generator(generator_inputs)
         
@@ -100,26 +167,29 @@ class DMSRMonitor(keras.callbacks.Callback):
             
     
     def on_batch_end(self, batch, logs=None):
-        
+        """
+        Records any loss values computed during the last batch.
+        """
         self.batch += 1
         batch = self.batch
         
+        # Record the loss values if they were computed.
         critic_loss = logs.get('critic_loss')
-        if not critic_loss == 2.0:
+        if not critic_loss == 0.0:
             self.critic_batch_loss.append(critic_loss)
             self.critic_batches.append(batch)
             self.critic_loss_epoch_total += critic_loss
             self.critic_updates += 1
         
         generator_loss = logs.get('generator_loss')
-        if not generator_loss == 2.0:
+        if not generator_loss == 0.0:
             self.generator_batch_loss.append(generator_loss)
             self.generator_batches.append(batch)
             self.generator_loss_epoch_total += generator_loss
             self.generator_updates += 1
             
         grad_pnlt_loss = logs.get('gradient_penalty')
-        if not grad_pnlt_loss == -1.0:
+        if not grad_pnlt_loss == 0.0:
             self.grad_pnlt_batch_loss.append(grad_pnlt_loss)
             self.grad_pnlt_batches.append(batch)
             self.grad_pnlt_loss_epoch_total += grad_pnlt_loss

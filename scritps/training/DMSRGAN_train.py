@@ -17,10 +17,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from dmsr.operations.resizing import crop_edge
-from dmsr.models.dmsr_gan.dmsr_gan import DMSRGAN
-from dmsr.models.dmsr_gan.dmsr_critic import NoiseController
+from dmsr.models.dmsr_gan.dmsr_gan import build_dmsrgan
 from dmsr.models.dmsr_gan.dmsr_monitor import DMSRMonitor
 from dmsr.operations.augmentation import random_transformation
+from dmsr.models.dmsr_gan.dmsr_checkpoint import DMSRGANCheckpoint
 
 
 #%%
@@ -41,9 +41,16 @@ def load_dataset(data_directory):
     return LR_data, HR_data, patch_size, LR_size, HR_size
 
 
+def transpose_dataset(LR_data, HR_data):
+    LR_data = tf.transpose(LR_data, (1, 2, 3, 0))
+    HR_data = tf.transpose(HR_data, (1, 2, 3, 0))
+    return LR_data, HR_data
+
+
 data_directory = '../../data/dmsr_training/'
 data = load_dataset(data_directory)
 LR_data, HR_data, box_size, LR_grid_size, HR_grid_size = data
+LR_data, HR_data = LR_data[:30, ...], HR_data[:30, ...]
 
 batch_size = 1
 HR_crop_size = 0
@@ -53,6 +60,7 @@ scale_factor = 2
 # HR_data = crop_edge(HR_data, size=HR_crop_size)
 dataset = tf.data.Dataset.from_tensor_slices((LR_data, HR_data))
 dataset = dataset.map(random_transformation)
+dataset = dataset.map(transpose_dataset)
 dataset = dataset.shuffle(len(dataset))
 dataset = dataset.batch(batch_size)
 
@@ -62,55 +70,32 @@ gan_args = {
     'LR_grid_size'       : int(LR_grid_size),
     'scale_factor'       : scale_factor,
     'HR_box_size'        : HR_box_size,
-    'generator_channels' : 512,
-    'critic_channels'    : 64,
-    'critic_steps'       : 5,
-    'generator_steps'    : 1,
-    'gp_weight'          : 10.0,
-    'gp_rate'            : 1,
-    'noise_std'          : 0.0,
-    'noise_epochs'       : 1
+    'generator_channels' : 128,
+    'critic_channels'    : 8
 }
 
-gan = DMSRGAN(**gan_args)
+gan = build_dmsrgan(**gan_args)
 
 
 #%%
-generator_dataset = gan.generator_supervised_dataset(dataset, batch_size)
-
-gan.generator.compile(
-    optimizer = keras.optimizers.Adam(learning_rate=0.00001, beta_1=0.0),
-    loss      = keras.losses.MSE
-)
-
-
-#%%
-generator_history = gan.generator.fit(generator_dataset, epochs = 5)
-
-
-# #%%
-# critic_dataset = gan.critic_supervised_dataset(LR_data, HR_data)
-# critic_dataset = critic_dataset.batch(7)
-
-# gan.critic.compile(
-#     optimizer = keras.optimizers.Adam(learning_rate=0.000005, beta_1=0.0),
-#     loss      = keras.losses.MSE
-# )
-
-
-# #%%
-# critic_history = gan.critic.fit(critic_dataset, epochs = 21)
-
-
-#%%
-gan.compile(
-    critic_optimizer    = keras.optimizers.Adam(
+gan_training_args = {
+    'critic_optimizer'    : keras.optimizers.Adam(
         learning_rate=0.00002, beta_1=0.0, beta_2=0.99 , weight_decay=0.000001
     ),
-    generator_optimizer = keras.optimizers.Adam(
+    'generator_optimizer' : keras.optimizers.Adam(
         learning_rate=0.00001, beta_1=0.0, beta_2=0.99
     ),
-)
+    'critic_steps' : 5,
+    'gp_weight'    : 10.0,
+    'gp_rate'      : 1,
+}
+
+gan.compile(**gan_training_args)
+
+#%%
+
+checkpoint_prefix = './data/checkpoints/dmsr_gan_checkpoint_{epoch}'
+gan_checkpoint = DMSRGANCheckpoint(gan, checkpoint_prefix)
 
 
 #%% Train the GAN.
@@ -118,74 +103,26 @@ generator_noise = gan.sampler(2)
 LR_samples = LR_data[1:3, ...]
 HR_samples = HR_data[1:3, ...]
 monitor = DMSRMonitor(generator_noise, LR_samples, HR_samples)
-noise_controller = NoiseController()
 
-callbacks = [monitor]
+callbacks = [monitor, gan_checkpoint]
 # callbacks = [monitor, noise_controller]
 
 #%%
-history_gan = gan.fit(dataset, epochs=6144, callbacks=callbacks)
+history_gan = gan.fit(dataset, epochs=1024, callbacks=callbacks)
 
 
 #%%
-gan.critic_optimizer.learning_rate.assign(0.000001)
+gan.critic_optimizer.learning_rate.assign(0.000002)
 gan.generator_optimizer.learning_rate.assign(0.000001)
 
-#%%
-model_filename = 'my_gan'
-gan.save(model_filename)
 
 #%%
-loaded_model = tf.keras.models.load_model('my_gan')
+history_gan = gan.fit(dataset, epochs=1024, callbacks=callbacks)
 
 
 #%%
-plt.figure()
-
-plt.plot(
-    monitor.critic_batches, monitor.critic_batch_loss, 
-    linewidth=0.1, color='black', alpha=0.4
-)
-plt.plot(
-    monitor.generator_batches, monitor.generator_batch_loss, 
-    linewidth=0.1, color='red', alpha=0.4
-)
-
-plt.plot(
-    monitor.critic_epochs, monitor.critic_epoch_loss, 
-    label='critic', linewidth=2, color='black'
-)
-plt.plot(
-    monitor.generator_epochs, monitor.generator_epoch_loss, 
-    label='generator', linewidth=2, color='red'
-)
-
-plt.ylim(-5000, 5000)
-plt.xlabel('Batches')
-plt.ylabel('Loss')
-plt.legend()
-plt.savefig('loss-batch-history.png', dpi=300)
-
+checkpoint_dir = './data/checkpoints'
+latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
 
 #%%
-critic_weights = np.asarray([])
-for weights in gan.critic.get_weights():
-    weights = weights.reshape(-1)
-    critic_weights = np.concatenate((critic_weights, weights), axis=0)
-    
-
-generator_weights = np.asarray([])
-for weights in gan.generator.get_weights():
-    weights = weights.reshape(-1)
-    generator_weights = np.concatenate((generator_weights, weights), axis=0)
-
-plt.figure()
-plt.hist(critic_weights, bins=500)
-# plt.show()
-# plt.close()
-
-# plt.figure()
-plt.hist(generator_weights, bins=500)
-plt.yscale('log')
-plt.show()
-plt.close()
+gan_checkpoint.restore(latest_checkpoint)

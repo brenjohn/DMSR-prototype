@@ -4,6 +4,8 @@
 Created on Thu May 30 15:50:27 2024
 
 @author: brennan
+
+This file defines functions for building the critic model for a DMSRGAN.
 """
 
 import tensorflow as tf
@@ -15,6 +17,12 @@ from keras.initializers import HeNormal
 
 from ...operations.particle_density import ngp_density_field
 from ...operations.resizing import scale_up_data, crop_to_match
+
+
+KWARGS = {
+    'data_format'        : 'channels_last',
+    'kernel_initializer' : HeNormal()
+}
 
 
 def build_critic(generator, channels=16):
@@ -44,19 +52,15 @@ def build_critic(generator, channels=16):
     """
     
     # 8 channels = 1 LR density + 3 LR position + 1 HR density + 3 HR position
-    critic_input_shape = (8,)
-    critic_input_shape += generator.output.shape[2:]
+    # critic_input_shape = (8,)
+    critic_input_shape = generator.output.shape[1:-1]
+    critic_input_shape += (8,)
     critic_inputs = Input(shape=critic_input_shape, name='critic_input_layer')
     
     num_cells = critic_input_shape[-1]
     
-    kwargs = {
-        'data_format'        : 'channels_first',
-        'kernel_initializer' : HeNormal()
-    }
-    
     # Initial convolutional layers.
-    x = Conv3D(channels, 3, **kwargs)(critic_inputs)
+    x = Conv3D(channels, 3, **KWARGS)(critic_inputs)
     x = PReLU(shared_axes=(2, 3, 4))(x)
     num_cells -= 2
     channels *= 2
@@ -70,7 +74,7 @@ def build_critic(generator, channels=16):
             
         else:
             num_cells -= 1
-            x = Conv3D(channels, 2, **kwargs)(x)
+            x = Conv3D(channels, 2, **KWARGS)(x)
             x = PReLU(shared_axes=(2, 3, 4))(x)
       
     # Final layer to output a sigle number.
@@ -79,9 +83,9 @@ def build_critic(generator, channels=16):
         num_cells,
         # activation='sigmoid',
         use_bias=False,
-        **kwargs
+        **KWARGS
     )(x)
-    output = Flatten(data_format='channels_first')(output)
+    output = Flatten(data_format='channels_last')(output)
     
     critic = keras.Model(
         inputs=critic_inputs, 
@@ -91,6 +95,7 @@ def build_critic(generator, channels=16):
     
     return critic
     
+
 
 def residual_block(x, channels):
     """
@@ -113,18 +118,18 @@ def residual_block(x, channels):
     """
     
     # Skip connection.
-    y = Conv3D(channels, 1, data_format='channels_first')(x)
-    y = Cropping3D(2, data_format='channels_first')(y)
+    y = Conv3D(channels, 1, use_bias=False, **KWARGS)(x)
+    y = Cropping3D(2, data_format='channels_last')(y)
     
     # Convolutional block.
-    x = Conv3D(channels, 3, data_format='channels_first')(x)
+    x = Conv3D(channels, 3, **KWARGS)(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
-    x = Conv3D(channels, 3, data_format='channels_first')(x)
+    x = Conv3D(channels, 3, **KWARGS)(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
     
     # Downsample.
     x = x + y
-    x = Conv3D(channels, 2, strides=(2, 2, 2), data_format='channels_first')(x)
+    x = Conv3D(channels, 2, strides=(2, 2, 2), use_bias=False, **KWARGS)(x)
     
     return x
 

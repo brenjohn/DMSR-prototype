@@ -4,11 +4,15 @@
 Created on Wed May 29 18:56:23 2024
 
 @author: brennan
+
+This file defines functions for building the generator model for a DMSRGAN.
+
+It also has functions for creating a latent space sampler for the generator.
 """
 
 from tensorflow import keras
 from keras.random import normal
-from keras.layers import Conv3D, PReLU, UpSampling3D, Cropping3D, Conv3DTranspose
+from keras.layers import Conv3D, PReLU, UpSampling3D, Cropping3D
 
 
 def build_generator(N, scale_factor, channels=256):
@@ -43,13 +47,12 @@ def build_generator(N, scale_factor, channels=256):
                    H-block.
             
     """
-    
     inputs = create_input_layers(N, scale_factor)
     
     # Create initial convolutional layer.
     x = inputs[0]
-    y = Cropping3D(1, data_format='channels_first')(x)
-    x = Conv3D(channels, 3, data_format='channels_first')(x)
+    y = Cropping3D(1, data_format='channels_last')(x)
+    x = Conv3D(channels, 3, data_format='channels_last')(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
     
     # Add H-blocks.
@@ -80,7 +83,7 @@ def create_input_layers(N, scale_factor):
     """
     
     # Create the input layer for the LR data to be enhanced.
-    input_shape = (3, N, N, N)
+    input_shape = (N, N, N, 3)
     LR_input = keras.Input(shape=input_shape, name='input_layer')
     inputs = (LR_input, )
     
@@ -88,12 +91,12 @@ def create_input_layers(N, scale_factor):
     N -= 2
     scale = 1
     while scale < scale_factor:
-        noiseA_shape = (1, N, N, N)
+        noiseA_shape = (N, N, N, 1)
         noiseA = keras.Input(shape=noiseA_shape, name=f'noiseA_{scale}')
         
         scale *= 2; N *= 2; N -= 2
         
-        noiseB_shape = (1, N, N, N)
+        noiseB_shape = (N, N, N, 1)
         noiseB = keras.Input(shape=noiseB_shape, name=f'noiseB_{scale}')
         
         N -= 2
@@ -135,8 +138,8 @@ def HBlock(x_p, y_p, noiseA, noiseB, in_channels, out_channels):
     x_n = HBlock_conv(x_p, noiseA, noiseB, in_channels, out_channels)
     p = HBlock_projection(x_n)
     
-    y_n = UpSampling3D(size=2, data_format='channels_first')(y_p)
-    y_n = Cropping3D(2, data_format='channels_first')(y_n)
+    y_n = UpSampling3D(size=2, data_format='channels_last')(y_p)
+    y_n = Cropping3D(2, data_format='channels_last')(y_n)
     
     return x_n, y_n + p
 
@@ -174,20 +177,20 @@ def HBlock_conv(x, noiseA, noiseB, in_channels, out_channels):
     """
     
     # Add Noise A.
-    noiseA = Conv3D(in_channels, 1, data_format='channels_first')(noiseA)
+    noiseA = Conv3D(in_channels, 1, data_format='channels_last')(noiseA)
     x = x + noiseA
     
     # Upsample.
-    x = UpSampling3D(size=2, data_format='channels_first')(x)
-    x = Conv3D(out_channels, 3, data_format='channels_first')(x)
+    x = UpSampling3D(size=2, data_format='channels_last')(x)
+    x = Conv3D(out_channels, 3, data_format='channels_last')(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
 
     # Add Noise B.
-    noiseB = Conv3D(out_channels, 1, data_format='channels_first')(noiseB)
+    noiseB = Conv3D(out_channels, 1, data_format='channels_last')(noiseB)
     x = x + noiseB
     
     # Final convolution.
-    x = Conv3D(out_channels, 3, data_format='channels_first')(x)
+    x = Conv3D(out_channels, 3, data_format='channels_last')(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
     
     return x
@@ -197,14 +200,13 @@ def HBlock_projection(x):
     """
     The H-block projection operation.
     """
-    x = Conv3D(3, 1, data_format='channels_first')(x)
+    x = Conv3D(3, 1, data_format='channels_last')(x)
     x = PReLU(shared_axes=(2, 3, 4))(x)
     return x
 
 
-def build_latent_space_sampler(model):
-    inputs = model.inputs
-    noise_shapes = [x.shape[1:] for x in inputs[1:]]
+def build_latent_space_sampler(input_shapes):
+    noise_shapes = [tuple(shape[1:]) for shape in input_shapes[1:]]
     
     def sampler(batch_size):
         batch_size = (batch_size,)
