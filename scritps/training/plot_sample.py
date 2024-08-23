@@ -52,8 +52,8 @@ def get_sample_positions(outputs_dir, LR_box_size, HR_box_size, step, n=0):
 
 def plot_samples(output_dir, step, save=False):
     
-    LR_box_size = 71.12375536862562 / 2
-    HR_box_size = 62.23328594754742 / 2
+    LR_box_size = 44.45234710539101 # 71.12375536862562 / 2
+    HR_box_size = 31.11664297377371 # 62.23328594754742 / 2
     positions = get_sample_positions(output_dir, LR_box_size, HR_box_size, step)
     (LR_xs, LR_ys), (SR_xs, SR_ys), (HR_xs, HR_ys) = positions
     
@@ -65,15 +65,15 @@ def plot_samples(output_dir, step, save=False):
     ax1.set_title('LR')
     
     # SR scatter plot
-    ax2.scatter(SR_xs, SR_ys, alpha=0.2, s=0.5)
+    ax2.scatter(SR_xs, SR_ys, alpha=0.2, s=0.1)
     ax2.set_title('SR')
     
     # HR scatter plot
-    ax3.scatter(HR_xs, HR_ys, alpha=0.2, s=0.5)
+    ax3.scatter(HR_xs, HR_ys, alpha=0.2, s=0.1)
     ax3.set_title('HR')
     
     # SR scatter plot
-    ax4.scatter(SR_xs, SR_ys, alpha=0.2, s=0.5)
+    ax4.scatter(SR_xs, SR_ys, alpha=0.2, s=0.1)
     ax4.set_title('SR')
     ax4.set_xlim(ax3.get_xlim())
     ax4.set_ylim(ax3.get_ylim())

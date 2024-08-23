@@ -18,7 +18,7 @@ class DMSRGANCheckpoint(tf.keras.callbacks.Callback):
     the batch_counter attributes of the given DMSRGAN.
     """
     
-    def __init__(self, dmsr_gan, checkpoint_prefix):
+    def __init__(self, dmsr_gan, checkpoint_prefix, checkpoint_rate=10):
         super(DMSRGANCheckpoint, self).__init__()
         
         checkpoint = tf.train.Checkpoint(
@@ -28,16 +28,19 @@ class DMSRGANCheckpoint(tf.keras.callbacks.Callback):
             critic_optimizer    = dmsr_gan.critic_optimizer,
             batch_counter       = dmsr_gan.batch_counter
         )
-        self.checkpoint = checkpoint
+        
+        self.checkpoint        = checkpoint
         self.checkpoint_prefix = checkpoint_prefix
+        self.checkpoint_rate   = checkpoint_rate
 
 
     def on_epoch_end(self, epoch, logs=None):
         """
         Save a checkpoint.
         """
-        file_prefix=self.checkpoint_prefix.format(epoch=epoch)
-        self.checkpoint.save(file_prefix=file_prefix)
+        if epoch % self.checkpoint_rate == 0:
+            file_prefix=self.checkpoint_prefix.format(epoch=epoch)
+            self.checkpoint.save(file_prefix=file_prefix)
         
         
     def restore(self, checkpoint_name):

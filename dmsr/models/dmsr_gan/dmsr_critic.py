@@ -12,7 +12,7 @@ import tensorflow as tf
 
 from tensorflow import keras
 from keras.random import normal
-from keras.layers import Input, Conv3D, PReLU, Cropping3D, Flatten
+from keras.layers import Input, Conv3D, PReLU, Cropping3D, Flatten, GlobalAveragePooling3D
 from keras.initializers import HeNormal
 
 from ...operations.particle_density import ngp_density_field
@@ -20,7 +20,7 @@ from ...operations.resizing import scale_up_data, crop_to_match
 
 
 KWARGS = {
-    'data_format'        : 'channels_last',
+    'data_format'        : 'channels_first',
     'kernel_initializer' : HeNormal()
 }
 
@@ -52,40 +52,44 @@ def build_critic(generator, channels=16):
     """
     
     # 8 channels = 1 LR density + 3 LR position + 1 HR density + 3 HR position
-    # critic_input_shape = (8,)
-    critic_input_shape = generator.output.shape[1:-1]
-    critic_input_shape += (8,)
+    critic_input_shape = (8,)
+    critic_input_shape += generator.output.shape[2:]
     critic_inputs = Input(shape=critic_input_shape, name='critic_input_layer')
     
     num_cells = critic_input_shape[-1]
     
     # Initial convolutional layers.
-    x = Conv3D(channels, 3, **KWARGS)(critic_inputs)
+    x = Conv3D(channels, 1, **KWARGS)(critic_inputs)
     x = PReLU(shared_axes=(2, 3, 4))(x)
-    num_cells -= 2
+    # num_cells -= 2
     channels *= 2
     
     # Add residual blocks to downsample the data.
     while num_cells > 5:
-        if num_cells % 2 == 0:
+        if (num_cells - 4) % 2 == 0:
             x = residual_block(x, channels)
             num_cells = (num_cells - 4) // 2
             channels *= 2
             
         else:
-            num_cells -= 1
-            x = Conv3D(channels, 2, **KWARGS)(x)
-            x = PReLU(shared_axes=(2, 3, 4))(x)
+            # print('Warning: Adding 2x2x2 convolution between residual blocks')
+            # num_cells -= 1
+            # x = Conv3D(channels, 2, **KWARGS)(x)
+            # x = PReLU(shared_axes=(2, 3, 4))(x)
+            print('Breaking at', num_cells)
+            break
       
     # Final layer to output a sigle number.
     output = Conv3D(
-        1, 
-        num_cells,
+        1,
+        1,
         # activation='sigmoid',
         use_bias=False,
         **KWARGS
     )(x)
-    output = Flatten(data_format='channels_last')(output)
+    # output = Flatten(data_format='channels_first')(output)
+    
+    output = GlobalAveragePooling3D(data_format='channels_first')(output)
     
     critic = keras.Model(
         inputs=critic_inputs, 
@@ -119,7 +123,7 @@ def residual_block(x, channels):
     
     # Skip connection.
     y = Conv3D(channels, 1, use_bias=False, **KWARGS)(x)
-    y = Cropping3D(2, data_format='channels_last')(y)
+    y = Cropping3D(2, data_format='channels_first')(y)
     
     # Convolutional block.
     x = Conv3D(channels, 3, **KWARGS)(x)

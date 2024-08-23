@@ -53,9 +53,16 @@ def get_sample_positions(filename):
 
 #%%
 
-def compute_power_spectrum(positions, grid_size):
+def compute_power_spectrum(positions, particle_mass, box_size, grid_size):
     
-    density, edges = np.histogramdd(positions, grid_size)
+    grid_size = int(grid_size)
+    bins = (grid_size, grid_size, grid_size)
+    bounds = [(0, box_size)] * 3
+    density, edges = np.histogramdd(positions, bins=bins, range=bounds)
+    cell_volume = (box_size / grid_size)**3
+    density = particle_mass * density / cell_volume
+    density /= np.mean(density)
+    density -= 1
     # print('Density shape:', density.shape)
     
     # Get the fourier transform of the density field and
@@ -67,9 +74,9 @@ def compute_power_spectrum(positions, grid_size):
     # print('Power Spectrum Shape:', power_spectrum.shape)
     
     # Compute the frequency arrays
-    kx = np.fft.fftfreq(grid_size[0], 1/grid_size[0])
-    ky = np.fft.fftfreq(grid_size[1], 1/grid_size[1])
-    kz = np.fft.fftfreq(grid_size[2], 1/grid_size[2])
+    kx = np.fft.fftfreq(grid_size, 1/grid_size)
+    ky = np.fft.fftfreq(grid_size, 1/grid_size)
+    kz = np.fft.fftfreq(grid_size, 1/grid_size)
     kx, ky, kz = np.meshgrid(kx, ky, kz, indexing='ij')
     k = np.sqrt(kx**2 + ky**2 + kz**2)
     
@@ -90,14 +97,25 @@ def compute_power_spectrum(positions, grid_size):
 
 #%%
 
-def plot_spectra(output_dir, step, save=False):
+def plot_spectra(meta_data, output_dir, step, save=False):
     
+    box_size, patch_size, LR_size, HR_size, LR_mass, HR_mass = meta_data
     positions = get_LR_SR_HR_positions(output_dir, step)
     LR_positions, SR_positions, HR_positions = positions
     
-    LR_ks, LR_spectrum = compute_power_spectrum(LR_positions, (32, 32, 32))
-    SR_ks, SR_spectrum = compute_power_spectrum(SR_positions, (64, 64, 64))
-    HR_ks, HR_spectrum = compute_power_spectrum(HR_positions, (64, 64, 64))
+    LR_cell_size = patch_size / LR_size
+    HR_cell_size = LR_cell_size / 2
+    HR_patch_size = HR_cell_size * HR_size
+    
+    LR_ks, LR_spectrum = compute_power_spectrum(
+        LR_positions, LR_mass, patch_size, LR_size
+    )
+    SR_ks, SR_spectrum = compute_power_spectrum(
+        SR_positions, HR_mass, HR_patch_size, HR_size
+    )
+    HR_ks, HR_spectrum = compute_power_spectrum(
+        HR_positions, HR_mass, HR_patch_size, HR_size
+    )
     
     # # Create a figure
     # fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(19, 8))
@@ -158,6 +176,10 @@ outputs_dir = 'data/training_outputs/'
 output_dirs = glob.glob(outputs_dir + 'step_*')
 output_dirs = np.sort(output_dirs)
 
+data_directory = '../../data/dmsr_training/'
+meta_file = data_directory + 'metadata.npy'
+meta_data = np.load(meta_file)
+
 for output in output_dirs:
     step = int(output.split('_')[-1])
-    plot_spectra(output, step, save=True)
+    plot_spectra(meta_data, output, step, save=True)

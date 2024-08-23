@@ -41,7 +41,7 @@ def read_snapshot(snapshots):
 data_directory = '../../data/dmsr_runs/'
 
 LR_snapshots = np.sort(glob.glob(data_directory + '*/064/snap_0002.hdf5'))
-HR_snapshots = np.sort(glob.glob(data_directory + '*/128/snap_0002.hdf5'))
+HR_snapshots = np.sort(glob.glob(data_directory + '*/256/snap_0002.hdf5'))
 
 
 #%%
@@ -50,9 +50,9 @@ HR_fields, box_size, HR_grid_size, HR_mass = read_snapshot(HR_snapshots)
 
 
 #%%
-padding = 2
-LR_patch_size = 16
-HR_patch_size = 32
+padding = 3
+LR_patch_size = 14
+HR_patch_size = 56
 
 LR_fields = cut_field(LR_fields, LR_patch_size, LR_grid_size, pad=padding)
 HR_fields = cut_field(HR_fields, HR_patch_size, HR_grid_size)
@@ -68,4 +68,12 @@ np.save(HR_file, HR_fields)
 meta_file = '../../data/dmsr_training/metadata.npy'
 LR_size = LR_patch_size + 2 * padding
 HR_size = HR_patch_size
-np.save(meta_file, [box_size, box_size/4, LR_size, HR_size, LR_mass, HR_mass])
+np.save(meta_file, [
+    box_size,
+    # LR_size * box_size / LR_grid_size, # TODO: Add LR patch size to metadata.
+    HR_size * box_size / HR_grid_size,
+    LR_size,
+    HR_size,
+    LR_mass,
+    HR_mass
+])

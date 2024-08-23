@@ -113,10 +113,10 @@ class DMSRGAN(keras.Model):
         #   b. Create density fields from the US data
         #   c. Concatenate the density fields with their respective US data.
         LR_data, HR_data = LR_HR_data
-        US_data = scale_up_data(LR_data, scale=2)
+        US_data = scale_up_data(LR_data, scale=4)
         US_data = crop_to_match(US_data, HR_data)
         US_density = ngp_density_field(US_data, self.box_size)
-        US_data = tf.concat((US_density, US_data), axis=-1)
+        US_data = tf.concat((US_density, US_data), axis=1)
         
         losses = {
             "critic_loss"      : 0.0,
@@ -234,7 +234,7 @@ class DMSRGAN(keras.Model):
         with tf.GradientTape() as tape:
             SR_data     = self.generator(generator_inputs)
             SR_density  = ngp_density_field(SR_data, self.box_size)
-            SR_data     = tf.concat((SR_density, SR_data, US_data), axis=-1)
+            SR_data     = tf.concat((SR_density, SR_data, US_data), axis=1)
             fake_logits = self.critic(SR_data)
             gen_loss    = self.generator_loss(fake_logits)
 
@@ -287,7 +287,7 @@ class DMSRGAN(keras.Model):
         a density field computed from the data.
         """
         density = ngp_density_field(data, self.box_size)
-        data = tf.concat((density, data, US_data), axis=-1)
+        data = tf.concat((density, data, US_data), axis=1)
         return data
     
     

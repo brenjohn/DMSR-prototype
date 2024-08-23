@@ -144,7 +144,8 @@ class DMSRMonitor(keras.callbacks.Callback):
         if not (epoch % self.output_rate == 0):
             return
         
-        # self.save_generator_samples(epoch)
+        self.save_generator_samples(epoch)
+        self.save_loss_values()
     
     
     def save_generator_samples(self, epoch):
@@ -164,6 +165,31 @@ class DMSRMonitor(keras.callbacks.Callback):
             np.save(output_dir + f'SR_sample_{i}_{epoch}.npy', SR_sample)
             np.save(output_dir + f'LR_sample_{i}_{epoch}.npy', LR_sample)
             np.save(output_dir + f'HR_sample_{i}_{epoch}.npy', HR_sample)
+            
+            
+    def save_loss_values(self):
+        """
+        Saves the current state of the loss histories.
+        """
+        loss_values = {
+            'critic_epoch_loss'    : self.critic_epoch_loss,
+            'critic_batch_loss'    : self.critic_batch_loss,
+            'critic_batches'       : self.critic_batches,
+            'critic_epochs'        : self.critic_epochs,
+            
+            'generator_epoch_loss' : self.generator_epoch_loss,
+            'generator_batch_loss' : self.generator_batch_loss,
+            'generator_batches'    : self.generator_batches,
+            'generator_epochs'     : self.generator_epochs,
+            
+            'grad_pnlt_epoch_loss' : self.grad_pnlt_epoch_loss,
+            'grad_pnlt_batch_loss' : self.grad_pnlt_batch_loss,
+            'grad_pnlt_batches'    : self.grad_pnlt_batches,
+            'grad_pnlt_epochs'     : self.grad_pnlt_epochs,
+        }
+        
+        filename = self.data_dir + 'loss_values.npz'
+        np.savez(filename, **loss_values)
             
     
     def on_batch_end(self, batch, logs=None):
