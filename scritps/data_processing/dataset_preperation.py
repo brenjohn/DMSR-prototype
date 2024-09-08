@@ -48,6 +48,11 @@ HR_snapshots = np.sort(glob.glob(data_directory + '*/256/snap_0002.hdf5'))
 LR_fields, box_size, LR_grid_size, LR_mass = read_snapshot(LR_snapshots)
 HR_fields, box_size, HR_grid_size, HR_mass = read_snapshot(HR_snapshots)
 
+# Normalise values so that box size is 1
+LR_fields /= box_size
+HR_fields /= box_size
+box_size = 1
+
 
 #%%
 padding = 3

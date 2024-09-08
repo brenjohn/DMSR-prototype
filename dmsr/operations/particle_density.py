@@ -145,7 +145,7 @@ def ngp_density_field(positions, box_length, periodic=False):
     # Create batch indices.
     batch_indices = tf.range(batch_size, dtype=tf.int32)
     batch_indices = tf.reshape(batch_indices, (batch_size, 1, 1, 1, 1))
-    batch_indices = tf.tile(batch_indices, (1,) + 3 * (grid_size,) + (1,))
+    batch_indices = tf.tile(batch_indices, (1,) + 3 * (grid_size,) + (1,)) # TODO: is this right? (1, 1) + 3 * (grid_size,) 
     batch_indices = tf.reshape(batch_indices, (-1, 1))
     
     # Compute the grid indices for each particle in the batch.

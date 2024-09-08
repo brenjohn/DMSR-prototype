@@ -51,9 +51,10 @@ def get_sample_positions(outputs_dir, LR_box_size, HR_box_size, step, n=0):
 #%%
 
 def plot_samples(output_dir, step, save=False):
-    
+
     LR_box_size = 44.45234710539101 # 71.12375536862562 / 2
     HR_box_size = 31.11664297377371 # 62.23328594754742 / 2
+    
     positions = get_sample_positions(output_dir, LR_box_size, HR_box_size, step)
     (LR_xs, LR_ys), (SR_xs, SR_ys), (HR_xs, HR_ys) = positions
     

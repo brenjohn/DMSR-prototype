@@ -47,7 +47,7 @@ data = load_dataset(data_directory)
 LR_data, HR_data, box_size, LR_grid_size, HR_grid_size = data
 # LR_data, HR_data = LR_data[:30, ...], HR_data[:30, ...]
 
-batch_size = 1
+batch_size = 4
 HR_crop_size = 0
 HR_box_size = (HR_grid_size - 2 * HR_crop_size) * box_size / HR_grid_size
 scale_factor = 4
