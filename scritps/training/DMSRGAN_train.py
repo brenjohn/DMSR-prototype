@@ -50,7 +50,7 @@ LR_data, HR_data, box_size, LR_grid_size, HR_grid_size = data
 batch_size = 4
 HR_crop_size = 0
 HR_box_size = (HR_grid_size - 2 * HR_crop_size) * box_size / HR_grid_size
-scale_factor = 4
+scale_factor = 2
 
 # HR_data = crop_edge(HR_data, size=HR_crop_size)
 dataset = tf.data.Dataset.from_tensor_slices((LR_data, HR_data))
@@ -80,7 +80,7 @@ gan_training_args = {
         learning_rate=0.00001, beta_1=0.0, beta_2=0.99
     ),
     'critic_steps' : 2,
-    'gp_weight'    : 100.0,
+    'gp_weight'    : 10.0,
     'gp_rate'      : 1,
 }
 

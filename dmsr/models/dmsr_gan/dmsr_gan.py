@@ -10,6 +10,7 @@ This file defines the DMSR-GAN (Dark Matter Super Resolution - GAN).
 
 import tensorflow as tf
 from tensorflow import keras
+from keras.layers import Cropping3D
 
 from ...operations.particle_density import ngp_density_field
 from ...operations.resizing import scale_up_data, crop_to_match
@@ -113,7 +114,7 @@ class DMSRGAN(keras.Model):
         #   b. Create density fields from the US data
         #   c. Concatenate the density fields with their respective US data.
         LR_data, HR_data = LR_HR_data
-        US_data = scale_up_data(LR_data, scale=4)
+        US_data = scale_up_data(LR_data, scale=2)
         US_data = crop_to_match(US_data, HR_data)
         US_density = ngp_density_field(US_data, self.box_size)
         US_data = tf.concat((US_density, US_data), axis=1)
@@ -169,7 +170,10 @@ class DMSRGAN(keras.Model):
         )
         
         # Apply updates from the gradient penalty term.
-        grad_pnlt = self.gradient_penalty(HR_data, SR_data)
+        if tf.equal(self.batch_counter % self.gp_rate, 0.0):
+            grad_pnlt = self.gradient_penalty(HR_data, SR_data)
+        else:
+            grad_pnlt = 0.0
             
         # Update the critic weights using the gradient of the critic loss.
         self.critic_optimizer.apply_gradients(
@@ -189,33 +193,27 @@ class DMSRGAN(keras.Model):
         penalty and applies the gradients to the critic weights, it needs to be
         used after the gradient of the critic loss is computed and before the
         critic's weights are updated with the gradients of the critic loss.
-        """
-        # Add gradient penalty term to the loss.
-        if tf.equal(self.batch_counter % self.gp_rate, 0.0):
-            
-            # Create interpolated data for calulating the gradient penalty. 
-            GP_data = self.interpolate(HR_data, SR_data)
-            
-            # Compute the gradient penalty term.
-            with tf.GradientTape() as tape:
-                gp_logits = self.critic(GP_data)
-                gradients = tf.gradients(gp_logits, GP_data)
-                grad_norm = tf.square(gradients)
-                grad_norm = tf.reduce_sum(grad_norm, axis=[1, 2, 3, 4])
-                # grad_norm = tf.sqrt(grad_norm)
-                grad_pnlt = tf.reduce_mean((grad_norm - 1.0) ** 2)
-                grad_pnlt = grad_pnlt * self.gp_weight
-              
-            # Update weights using the gradient of the gradient penalty term.
-            gp_gradient = tape.gradient(
-                grad_pnlt, self.critic.trainable_variables
-            )
-            self.critic_optimizer.apply_gradients(
-                zip(gp_gradient, self.critic.trainable_variables)
-            )
-            
-        else:
-            grad_pnlt = 0.0
+        """  
+        # Create interpolated data for calulating the gradient penalty. 
+        GP_data = self.interpolate(HR_data, SR_data)
+        
+        # Compute the gradient penalty term.
+        with tf.GradientTape() as tape:
+            gp_logits = self.critic(GP_data)
+            gradients = tf.gradients(gp_logits, GP_data)
+            grad_norm = tf.square(gradients)
+            grad_norm = tf.reduce_sum(grad_norm, axis=[1, 2, 3, 4])
+            # grad_norm = tf.sqrt(grad_norm)
+            grad_pnlt = tf.reduce_mean((grad_norm - 1.0) ** 2)
+            grad_pnlt = grad_pnlt * self.gp_weight
+          
+        # Update weights using the gradient of the gradient penalty term.
+        gp_gradient = tape.gradient(
+            grad_pnlt, self.critic.trainable_variables
+        )
+        self.critic_optimizer.apply_gradients(
+            zip(gp_gradient, self.critic.trainable_variables)
+        )
             
         return grad_pnlt
     

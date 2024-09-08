@@ -41,7 +41,7 @@ def read_snapshot(snapshots):
 data_directory = '../../data/dmsr_runs/'
 
 LR_snapshots = np.sort(glob.glob(data_directory + '*/064/snap_0002.hdf5'))
-HR_snapshots = np.sort(glob.glob(data_directory + '*/256/snap_0002.hdf5'))
+HR_snapshots = np.sort(glob.glob(data_directory + '*/128/snap_0002.hdf5'))
 
 
 #%%
@@ -55,9 +55,9 @@ box_size = 1
 
 
 #%%
-padding = 3
-LR_patch_size = 14
-HR_patch_size = 56
+padding = 2
+LR_patch_size = 16
+HR_patch_size = 32
 
 LR_fields = cut_field(LR_fields, LR_patch_size, LR_grid_size, pad=padding)
 HR_fields = cut_field(HR_fields, HR_patch_size, HR_grid_size)

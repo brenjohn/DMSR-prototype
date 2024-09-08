@@ -68,7 +68,7 @@ def build_generator(N, scale_factor, channels=256):
             out_channels = channels // scale
         )
     
-    y = Cropping3D(2, data_format='channels_first')(y)
+    # y = Cropping3D(2, data_format='channels_first')(y)
     generator = keras.Model(
         inputs=inputs,
         outputs=y, 

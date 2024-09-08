@@ -17,9 +17,9 @@ def scale_up_data(data, scale, batch=False):
     Increases the size of the given data tensor by the given scale factor by
     repeating values in each direction.
     """
-    data = tf.repeat(data, scale, axis=1)
     data = tf.repeat(data, scale, axis=2)
     data = tf.repeat(data, scale, axis=3)
+    data = tf.repeat(data, scale, axis=4)
     return data
 
 
@@ -56,7 +56,7 @@ def crop_to_match(large_tensor, small_tensor):
     large_shape = tf.shape(large_tensor)
     small_shape = tf.shape(small_tensor)
     offsets = (large_shape - small_shape) // 2
-    offset = offsets[1]
+    offset = offsets[-1]
     return crop_edge(large_tensor, offset)
 
 
@@ -65,7 +65,7 @@ def crop_edge(tensor, size):
     """
     Crop the spacial dimensions of the given tensor by the given amount.
     """
-    return tensor[:, size:-size, size:-size, size:-size, :]
+    return tensor[:, :, size:-size, size:-size, size:-size]
     
 
 @tf.function

@@ -18,7 +18,7 @@ from dmsr.operations.particle_density import ngp_density_field
 
 
 #%%
-def get_sample_positions(outputs_dir, step, n=1):
+def get_sample_positions(outputs_dir, step, n=0):
     LR_sample = np.load(outputs_dir + f'/LR_sample_{n}_{step}.npy')
     SR_sample = np.load(outputs_dir + f'/SR_sample_{n}_{step}.npy')
     HR_sample = np.load(outputs_dir + f'/HR_sample_{n}_{step}.npy')
@@ -33,25 +33,31 @@ def plot_samples(output_dir, step, save=False):
     positions = get_sample_positions(output_dir, step)
     LR_sample, SR_sample, HR_sample = positions
     
-    LR_density = ngp_density_field(LR_sample[None, ...], 1)[0, 0, ...]
-    SR_density = ngp_density_field(SR_sample[None, ...], 1)[0, 0, ...]
-    HR_density = ngp_density_field(HR_sample[None, ...], 1)[0, 0, ...]
+    LR_density = ngp_density_field(LR_sample[None, ...], 20 / 64)[0, 0, ...]
+    SR_density = ngp_density_field(SR_sample[None, ...], 32 / 128)[0, 0, ...]
+    HR_density = ngp_density_field(HR_sample[None, ...], 32 / 128)[0, 0, ...]
     
     # Create a figure
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 7))
     
     # LR density plot
-    d = np.sum(LR_density, axis=2)
+    d = np.sum(LR_density, axis=-1)
+    d = np.transpose(d, axes=(1, 0))
+    d = np.flip(d, axis=0)
     ax1.imshow(d)
     ax1.set_title('LR')
     
     # SR density plot
-    d = np.sum(SR_density, axis=2)
+    d = np.sum(SR_density, axis=-1)
+    d = np.transpose(d, axes=(1, 0))
+    d = np.flip(d, axis=0)
     ax2.imshow(d)
     ax2.set_title('SR')
     
     # HR density plot
-    d = np.sum(HR_density, axis=2)
+    d = np.sum(HR_density, axis=-1)
+    d = np.transpose(d, axes=(1, 0))
+    d = np.flip(d, axis=0)
     ax3.imshow(d)
     ax3.set_title('HR')
     
@@ -60,7 +66,7 @@ def plot_samples(output_dir, step, save=False):
     plt.tight_layout()
     
     if save:
-        plots_dir = 'plots/outputs/'
+        plots_dir = 'plots/training_sample_densities/'
         os.makedirs(plots_dir, exist_ok=True)
         plot_name = plots_dir + f'density_output_{step:04}.png'
         plt.savefig(plot_name, dpi=100)
@@ -80,6 +86,11 @@ outputs_dir = 'data/training_outputs/'
 output_dirs = glob.glob(outputs_dir + 'step_*')
 output_dirs = np.sort(output_dirs)
 
-for output in output_dirs:
+existing_plots = glob.glob('plots/training_sample_densities/density_output_*')
+existing_steps = [plot.split('.')[0].split('_')[-1] for plot in existing_plots]
+new_outputs = [output for output in output_dirs 
+               if not output.split('_')[-1] in existing_steps]
+
+for output in new_outputs:
     step = int(output.split('_')[-1])
     plot_samples(output, step, save=True)
