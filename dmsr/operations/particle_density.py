@@ -138,14 +138,14 @@ def ngp_density_field(positions, box_length, periodic=False):
     # absolute positions of particles.
     r = tf.range(0, box_length, cell_size)
     r = tf.cast(r, dtype=tf.float32)
-    X, Y, Z = tf.meshgrid(r, r, r)
+    X, Y, Z = tf.meshgrid(r, r, r, indexing='ij')
     grid_positions = tf.stack((X, Y, Z), axis=0)
     positions += grid_positions
     
     # Create batch indices.
     batch_indices = tf.range(batch_size, dtype=tf.int32)
     batch_indices = tf.reshape(batch_indices, (batch_size, 1, 1, 1, 1))
-    batch_indices = tf.tile(batch_indices, (1,) + 3 * (grid_size,) + (1,)) # TODO: is this right? (1, 1) + 3 * (grid_size,) 
+    batch_indices = tf.tile(batch_indices, (1, 1) + 3 * (grid_size,))
     batch_indices = tf.reshape(batch_indices, (-1, 1))
     
     # Compute the grid indices for each particle in the batch.
@@ -208,7 +208,7 @@ def ngp_density_field(positions, box_length, periodic=False):
 #     # Add the grid positions to the given relative displacements to get the
 #     # absolute positions of particles.
 #     r = tf.range(0, box_length, cell_size, dtype=tf.float32)
-#     X, Y, Z = tf.meshgrid(r, r, r)
+#     X, Y, Z = tf.meshgrid(r, r, r, indexing='ij')
 #     grid_positions = tf.stack((X, Y, Z), axis=0)
 #     positions = displacements + grid_positions
     

@@ -31,16 +31,10 @@ def load_dataset(data_directory):
     return HR_data, patch_size, LR_size, HR_size
 
 
-def transpose_dataset(data):
-    data = tf.transpose(data, (0, 2, 3, 4, 1))
-    return data
-
-
 data_directory = '../../data/dmsr_training/'
 data = load_dataset(data_directory)
 HR_data, box_size, LR_grid_size, HR_grid_size = data
 HR_data = HR_data[:1, ...]
-HR_data = transpose_dataset(HR_data)
 
 
 #%%
@@ -51,8 +45,8 @@ def get_sample_positions(data, box_size):
     cell_size = box_size / N
     r = np.arange(0, box_size, cell_size)
     X, Y, Z = np.meshgrid(r, r, r, indexing='ij')
-    xs = X + x[0, :, :, :, 0]
-    ys = Y + x[0, :, :, :, 1]
+    xs = X + x[0, 0, :, :, :]
+    ys = Y + x[0, 1, :, :, :]
     positions = xs.ravel(), ys.ravel()
     
     return positions
@@ -83,7 +77,7 @@ plot_sample(HR_data, box_size)
 density = ngp_density_field(HR_data, box_size)
 
 density = tf.squeeze(density, axis=0)
-density = tf.squeeze(density, axis=-1)
+density = tf.squeeze(density, axis=0)
 density = tf.reduce_sum(density, axis=2)
 density = tf.transpose(density, perm=(1, 0))
 density = tf.reverse(density, axis=[0])

@@ -38,7 +38,7 @@ def get_sample_positions(filename):
     N = sample.shape[-1]
     x = sample
     r = np.linspace(0, 1, N)
-    X, Y, Z = np.meshgrid(r, r, r)
+    X, Y, Z = np.meshgrid(r, r, r, indexing='ij')
     sample_xs = X + x[0, :, :, :]
     sample_ys = Y + x[1, :, :, :]
     sample_zs = Z + x[2, :, :, :]
