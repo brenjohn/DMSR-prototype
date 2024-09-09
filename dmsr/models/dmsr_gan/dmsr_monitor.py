@@ -153,7 +153,7 @@ class DMSRMonitor(keras.callbacks.Callback):
         Saves generator samples from the current generator.
         """
         generator_inputs = (self.LR_samples,) + self.noise
-        SR_samples = self.model.generator(generator_inputs)
+        SR_samples = self.model.generator.predict(generator_inputs)
         
         output_dir = self.data_dir + f'step_{epoch:04}/'
         os.makedirs(output_dir, exist_ok=True)

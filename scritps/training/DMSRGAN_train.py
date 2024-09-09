@@ -45,7 +45,7 @@ def load_dataset(data_directory):
 data_directory = '../../data/dmsr_training/'
 data = load_dataset(data_directory)
 LR_data, HR_data, box_size, LR_grid_size, HR_grid_size = data
-# LR_data, HR_data = LR_data[:30, ...], HR_data[:30, ...]
+LR_data, HR_data = LR_data[:300, ...], HR_data[:300, ...]
 
 batch_size = 4
 HR_crop_size = 0
@@ -74,10 +74,10 @@ gan = build_dmsrgan(**gan_args)
 #%%
 gan_training_args = {
     'critic_optimizer'    : keras.optimizers.Adam(
-        learning_rate=0.00002, beta_1=0.0, beta_2=0.99 , weight_decay=0.000001
+        learning_rate=0.00005, beta_1=0.0, beta_2=0.99 , weight_decay=0.000001
     ),
     'generator_optimizer' : keras.optimizers.Adam(
-        learning_rate=0.00001, beta_1=0.0, beta_2=0.99
+        learning_rate=0.00002, beta_1=0.0, beta_2=0.99
     ),
     'critic_steps' : 2,
     'gp_weight'    : 10.0,
@@ -96,6 +96,8 @@ gan_checkpoint = DMSRGANCheckpoint(gan, checkpoint_prefix, checkpoint_rate=100)
 generator_noise = gan.sampler(2)
 LR_samples = LR_data[1:3, ...]
 HR_samples = HR_data[1:3, ...]
+LR_samples = np.transpose(LR_samples, (0, 2, 3, 4, 1))
+HR_samples = np.transpose(HR_samples, (0, 2, 3, 4, 1))
 monitor = DMSRMonitor(generator_noise, LR_samples, HR_samples)
 
 #%%

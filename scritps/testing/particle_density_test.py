@@ -10,11 +10,13 @@ import sys
 sys.path.append("..")
 sys.path.append("../..")
 
+import time
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from dmsr.operations.particle_density import ngp_density_field
+from dmsr.operations.particle_density import cic_density_field
 
 
 #%%
@@ -37,7 +39,7 @@ HR_data, box_size, LR_grid_size, HR_grid_size = data
 HR_data = HR_data[:1, ...]
 
 
-#%%
+#%% Creating a scatter plot of particle positions.
 def get_sample_positions(data, box_size):
     
     N = data.shape[-2]
@@ -66,29 +68,48 @@ def plot_sample(data, box_size):
     
     plt.tight_layout()
     plt.show()
+    # fig.savefig('particle_before.png', dpi=300)
     plt.close()
-    
 
-#%%
 plot_sample(HR_data, box_size)
 
 
-#%%
+#%% Create heat map of ngp density field
+ti = time.time()
 density = ngp_density_field(HR_data, box_size)
-
+print(f'ngp time: {time.time() - ti}')
+density = tf.squeeze(density, axis=0)
 density = tf.squeeze(density, axis=0)
 density = tf.squeeze(density, axis=0)
 density = tf.reduce_sum(density, axis=2)
 density = tf.transpose(density, perm=(1, 0))
 density = tf.reverse(density, axis=[0])
 
-#%%
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 plt.imshow(density)
 ax.set_title('Density Plot')
 plt.tight_layout()
 plt.show()
+# fig.savefig('density_before.png', dpi=300)
 plt.close()
 
-#%%
-# plt.imshow(HR_data[0, :, :, 0, 0])
+vmin = np.min(density)
+vmax = np.max(density)
+
+#%% Create heat map of cic density field
+ti = time.time()
+density = cic_density_field(HR_data, box_size)
+print(f'cic time: {time.time() - ti}')
+density = tf.squeeze(density, axis=0)
+density = tf.squeeze(density, axis=0)
+density = tf.reduce_sum(density, axis=2)
+density = tf.transpose(density, perm=(1, 0))
+density = tf.reverse(density, axis=[0])
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+plt.imshow(density, vmin=vmin, vmax=vmax)
+ax.set_title('Density Plot')
+plt.tight_layout()
+plt.show()
+# fig.savefig('density_before.png', dpi=300)
+plt.close()
