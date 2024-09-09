@@ -79,7 +79,7 @@ def ngp_density_field(positions, box_length, periodic=False):
                      the density field for each batch.
     """
     data_shape = tf.shape(positions)
-    batch_size, grid_size = data_shape[0], data_shape[1]
+    batch_size, grid_size = data_shape[0], data_shape[-1]
     cell_size = tf.cast(
         box_length / tf.cast(grid_size, tf.float64), 
         tf.float32
@@ -90,7 +90,7 @@ def ngp_density_field(positions, box_length, periodic=False):
     r = tf.range(0, box_length, cell_size)
     r = tf.cast(r, dtype=tf.float32)
     X, Y, Z = tf.meshgrid(r, r, r, indexing='ij')
-    grid_positions = tf.stack((X, Y, Z), axis=-1)
+    grid_positions = tf.stack((X, Y, Z), axis=0)
     grid_positions = grid_positions[None, ...]
     grid_positions = tf.repeat(grid_positions, repeats=batch_size, axis=0)
     positions += grid_positions
@@ -103,7 +103,7 @@ def ngp_density_field(positions, box_length, periodic=False):
     
     # Compute the grid indices for each particle in the batch.
     grid_indices = tf.floor(positions / cell_size)
-    # grid_indices = tf.transpose(grid_indices, perm=(0, 2, 3, 4, 1)) # For channels_first case
+    grid_indices = tf.transpose(grid_indices, perm=(0, 2, 3, 4, 1))
     grid_indices = tf.reshape(grid_indices, (-1, 3))
     grid_indices = tf.cast(grid_indices, tf.int32)
     
@@ -128,7 +128,7 @@ def ngp_density_field(positions, box_length, periodic=False):
     # Normalise to have M tot = 1
     density_shape = (batch_size, grid_size, grid_size, grid_size)
     density_field = tf.scatter_nd(indices, updates, shape=density_shape)
-    # density_field /= tf.cast(grid_size**3, dtype=tf.float32)
+    density_field /= tf.cast(grid_size**3, dtype=tf.float32)
     
     return density_field[:, None, ...]
 
@@ -152,7 +152,7 @@ def cic_density_field(relative_positions, box_length):
                       representing the density field for each batch.
     """
     data_shape = tf.shape(relative_positions)
-    batch_size, grid_size = data_shape[0], data_shape[1]
+    batch_size, grid_size = data_shape[0], data_shape[-1]
     cell_size = tf.cast(
         box_length / tf.cast(grid_size, tf.float64), 
         tf.float32
@@ -163,7 +163,7 @@ def cic_density_field(relative_positions, box_length):
     r = tf.range(0, box_length, cell_size)
     r = tf.cast(r, dtype=tf.float32)
     X, Y, Z = tf.meshgrid(r, r, r, indexing='ij')
-    grid_positions = tf.stack((X, Y, Z), axis=-1)
+    grid_positions = tf.stack((X, Y, Z), axis=0)
     grid_positions = grid_positions[None, ...]
     grid_positions = tf.repeat(grid_positions, repeats=batch_size, axis=0)
     positions = relative_positions + grid_positions
@@ -173,12 +173,13 @@ def cic_density_field(relative_positions, box_length):
     # these indices correspond to "ghost zones" that pad the main grid.
     positions /= cell_size
     grid_indices = tf.floor(positions)
-    # grid_indices = tf.transpose(grid_indices, perm=(0, 2, 3, 4, 1))
+    grid_indices = tf.transpose(grid_indices, perm=(0, 2, 3, 4, 1))
+    positions = tf.transpose(positions, perm=(0, 2, 3, 4, 1))
     
     # Create the batch component of the indices.
     batch_indices = tf.range(batch_size, dtype=tf.int32)
     batch_indices = batch_indices[:, None, None, None, None]
-    batch_indices = tf.tile(batch_indices, (1,) + 3 * (grid_size,) + (1,))
+    batch_indices = tf.tile(batch_indices, (1, 1) + 3 * (grid_size,))
     batch_indices = tf.reshape(batch_indices, (-1, 1))
     
     # Compute the displacements of each particle from their associated grid
@@ -216,6 +217,7 @@ def cic_density_field(relative_positions, box_length):
     density_field += cic_density_component(*density_component_args, 1, 0, 1)
     density_field += cic_density_component(*density_component_args, 1, 1, 0)
     density_field += cic_density_component(*density_component_args, 1, 1, 1)
+    density_field /= tf.cast(grid_size**3, dtype=tf.float32)
     
     return density_field[:, None, ...]
 
