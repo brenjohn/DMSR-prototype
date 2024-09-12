@@ -25,9 +25,13 @@ matplotlib.rc('font', **font)
 #%%
 
 def compute_power_spectrum(displacements, particle_mass, box_size, grid_size):
+    volume = box_size**3
+    cell_size = box_size / grid_size
+    cell_volume = cell_size**3
+    
     # Compute the denisty field from the given displacement field.
     density = ngp_density_field(displacements[None, ...], box_size).numpy()
-    density = density[0, 0, ...]
+    density = density[0, 0, ...] * particle_mass / cell_volume
     
     # Compute the denisty contrast.
     mean_density = np.mean(density)
@@ -36,14 +40,12 @@ def compute_power_spectrum(displacements, particle_mass, box_size, grid_size):
     
     # Get the fourier transform of the density field and
     # shift the zero-frequency component to the center.
-    density_ft = fftn(density)
-    density_ft = fftshift(density_ft)
+    density_ft = fftn(density) / (grid_size**3)
     
     power_spectrum = np.abs(density_ft)**2
     
     # Compute the frequency arrays
-    ks = np.fft.fftfreq(grid_size, box_size/grid_size)
-    ks = np.fft.fftshift(ks)
+    ks = 2 * np.pi * np.fft.fftfreq(grid_size, box_size/grid_size) / box_size
     kx, ky, kz = np.meshgrid(ks, ks, ks, indexing='ij')
     k = np.sqrt(kx**2 + ky**2 + kz**2)
     
@@ -55,7 +57,8 @@ def compute_power_spectrum(displacements, particle_mass, box_size, grid_size):
     # Average the power spectrum over spherical shells
     for i in range(len(k_bin_centers)):
         shell_mask = (k >= k_bins[i]) & (k < k_bins[i+1])
-        power_spectrum_radial[i] = np.mean(power_spectrum[shell_mask])
+        power = k[shell_mask]**3 * power_spectrum[shell_mask] * volume
+        power_spectrum_radial[i] = np.mean(power) 
     
     return k_bin_centers, power_spectrum_radial
 
@@ -94,7 +97,7 @@ def plot_spectra(meta_data, output_dir, step, n = 0, save=False):
     plt.plot(SR_ks, SR_spectrum, label='SR', linewidth=4, color='black')
     plt.xscale('log')
     plt.yscale('log')
-    plt.ylim((1e4, 5e7))
+    # plt.ylim((1e4, 5e7))
     plt.xlabel('k')
     plt.ylabel('P(k)')
     plt.title(f'Epoch {step}')

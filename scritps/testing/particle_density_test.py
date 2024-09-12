@@ -75,8 +75,9 @@ plot_sample(HR_data, box_size)
 
 
 #%% Create heat map of ngp density field
+b = tf.cast(box_size, tf.float32)
 ti = time.time()
-density = ngp_density_field(HR_data, box_size)
+density = ngp_density_field(HR_data, b)
 print(f'ngp time: {time.time() - ti}')
 density = tf.squeeze(density, axis=0)
 density = tf.squeeze(density, axis=0)
@@ -89,15 +90,16 @@ plt.imshow(density)
 ax.set_title('Density Plot')
 plt.tight_layout()
 plt.show()
-# fig.savefig('density_before.png', dpi=300)
+# fig.savefig('ngp_density.png', dpi=300)
 plt.close()
 
 vmin = np.min(density)
 vmax = np.max(density)
 
 #%% Create heat map of cic density field
+b = tf.cast(box_size, tf.float32)
 ti = time.time()
-density = cic_density_field(HR_data, box_size)
+density = cic_density_field(HR_data, b)
 print(f'cic time: {time.time() - ti}')
 density = tf.squeeze(density, axis=0)
 density = tf.squeeze(density, axis=0)
@@ -110,5 +112,33 @@ plt.imshow(density, vmin=vmin, vmax=vmax)
 ax.set_title('Density Plot')
 plt.tight_layout()
 plt.show()
-# fig.savefig('density_before.png', dpi=300)
+# fig.savefig('cic_density_before.png', dpi=300)
 plt.close()
+
+
+#%%
+fake_data = tf.random.normal((1, 3, 32, 32, 32))
+b = tf.cast(box_size, tf.float32)
+ti = time.time()
+density = cic_density_field(HR_data, b)
+print(f'cic time: {time.time() - ti}')
+
+
+#%%
+fake_data = tf.random.normal((1, 3, 32, 32, 32))
+b = tf.cast(box_size, tf.float32)
+
+ti = time.time()
+density = cic_density_field(HR_data, b)
+print(f'cic time: {time.time() - ti}')
+
+ti = time.time()
+with tf.GradientTape() as tape:
+    tape.watch(fake_data)
+    # b = tf.cast(0.25, tf.float32)
+    density = cic_density_field(fake_data, b)
+    
+gp_gradient = tape.gradient(
+    density, fake_data
+)
+print('Gradient tooks:', time.time() - ti)

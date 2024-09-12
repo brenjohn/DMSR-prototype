@@ -10,9 +10,8 @@ This file defines the DMSR-GAN (Dark Matter Super Resolution - GAN).
 
 import tensorflow as tf
 from tensorflow import keras
-from keras.layers import Cropping3D
 
-from ...operations.particle_density import ngp_density_field
+from ...operations.particle_density import cic_density_field
 from ...operations.resizing import scale_up_data, crop_to_match
 
 from .dmsr_generator import build_generator, build_latent_space_sampler
@@ -74,7 +73,7 @@ class DMSRGAN(keras.Model):
         super().__init__()
         self.generator = generator
         self.critic    = critic
-        self.box_size  = box_size
+        self.box_size  = tf.constant(box_size, dtype=tf.float32)
         
         self.batch_counter = tf.Variable(0, trainable=False, dtype=tf.float32)
     
@@ -116,7 +115,7 @@ class DMSRGAN(keras.Model):
         LR_data, HR_data = LR_HR_data
         US_data = scale_up_data(LR_data, scale=2)
         US_data = crop_to_match(US_data, HR_data)
-        US_density = ngp_density_field(US_data, self.box_size)
+        US_density = cic_density_field(US_data, self.box_size)
         US_data = tf.concat((US_density, US_data), axis=1)
         
         losses = {
@@ -125,18 +124,29 @@ class DMSRGAN(keras.Model):
             "gradient_penalty" : 0.0
         }
         
+        # # Train the generator model and get the generator loss
+        # if tf.equal(self.batch_counter % self.critic_steps, 0.0):
+        #     gen_loss = self.generator_train_step(LR_data, US_data)
+        #     losses["generator_loss"] = gen_loss
+            
+        # # Train the critic model first and retain the critic loss.
+        # else:
+        #     critic_loss, gp_loss = self.critic_train_step(
+        #         LR_data, US_data, HR_data
+        #     )
+        #     losses["critic_loss"] = critic_loss
+        #     losses["gradient_penalty"] = gp_loss
+        
         # Train the generator model and get the generator loss
-        if tf.equal(self.batch_counter % self.critic_steps, 0.0):
-            gen_loss = self.generator_train_step(LR_data, US_data)
-            losses["generator_loss"] = gen_loss
+        gen_loss = self.generator_train_step(LR_data, US_data)
+        losses["generator_loss"] = gen_loss
             
         # Train the critic model first and retain the critic loss.
-        else:
-            critic_loss, gp_loss = self.critic_train_step(
-                LR_data, US_data, HR_data
-            )
-            losses["critic_loss"] = critic_loss
-            losses["gradient_penalty"] = gp_loss
+        critic_loss, gp_loss = self.critic_train_step(
+            LR_data, US_data, HR_data
+        )
+        losses["critic_loss"] = critic_loss
+        losses["gradient_penalty"] = gp_loss
         
         self.batch_counter.assign_add(1)
         return losses
@@ -147,6 +157,7 @@ class DMSRGAN(keras.Model):
         """
         Train step for the critic.
         """
+        print('Tracing critic step')
         batch_size = tf.shape(LR_data)[0]
         
         # Use the generator to generate SR data.
@@ -193,7 +204,8 @@ class DMSRGAN(keras.Model):
         penalty and applies the gradients to the critic weights, it needs to be
         used after the gradient of the critic loss is computed and before the
         critic's weights are updated with the gradients of the critic loss.
-        """  
+        """
+        print('Tracing gradient penalty')
         # Create interpolated data for calulating the gradient penalty. 
         GP_data = self.interpolate(HR_data, SR_data)
         
@@ -223,6 +235,7 @@ class DMSRGAN(keras.Model):
         """
         Train step for the generator.
         """
+        print('Tracing generator step')
         # Generate noise for the generator.
         batch_size = tf.shape(LR_data)[0]
         noise = self.sampler(batch_size)
@@ -231,7 +244,7 @@ class DMSRGAN(keras.Model):
         # Calculate the generator loss.
         with tf.GradientTape() as tape:
             SR_data     = self.generator(generator_inputs)
-            SR_density  = ngp_density_field(SR_data, self.box_size)
+            SR_density  = cic_density_field(SR_data, self.box_size)
             SR_data     = tf.concat((SR_density, SR_data, US_data), axis=1)
             fake_logits = self.critic(SR_data)
             gen_loss    = self.generator_loss(fake_logits)
@@ -253,6 +266,7 @@ class DMSRGAN(keras.Model):
     
     @tf.function
     def critic_loss(self, real_logits, fake_logits):
+        print('Tracing critic loss')
         real_loss = tf.reduce_mean(real_logits)
         fake_loss = tf.reduce_mean(fake_logits)
         return fake_loss - real_loss
@@ -260,6 +274,7 @@ class DMSRGAN(keras.Model):
     
     @tf.function
     def generator_loss(self, fake_logits):
+        print('Tracing generator loss')
         return -tf.reduce_mean(fake_logits)
     
     
@@ -270,6 +285,7 @@ class DMSRGAN(keras.Model):
         tensors a random amount. This is used for computing the gradient 
         penalty term during training.
         """
+        print('Tracing interpolate')
         batch_size = tf.shape(real_data)[0]
         eps = tf.random.uniform([batch_size, 1, 1, 1, 1])
         diff = fake_data - real_data
@@ -284,7 +300,8 @@ class DMSRGAN(keras.Model):
         The data is concatenated with both the US data it's conditioned on and
         a density field computed from the data.
         """
-        density = ngp_density_field(data, self.box_size)
+        print('Tracing critic data preparation')
+        density = cic_density_field(data, self.box_size)
         data = tf.concat((density, data, US_data), axis=1)
         return data
     
