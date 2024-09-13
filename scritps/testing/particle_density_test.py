@@ -16,7 +16,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from dmsr.operations.particle_density import ngp_density_field
-from dmsr.operations.particle_density import cic_density_field
+from dmsr.operations.particle_density import cic_density_field, cic_paint
 
 
 #%%
@@ -108,7 +108,7 @@ density = tf.transpose(density, perm=(1, 0))
 density = tf.reverse(density, axis=[0])
 
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-plt.imshow(density, vmin=vmin, vmax=vmax)
+plt.imshow(density)#, vmin=vmin, vmax=vmax)
 ax.set_title('Density Plot')
 plt.tight_layout()
 plt.show()
@@ -142,3 +142,23 @@ gp_gradient = tape.gradient(
     density, fake_data
 )
 print('Gradient tooks:', time.time() - ti)
+
+
+#%%
+ti = time.time()
+density = cic_paint(HR_data, box_size)
+print(f'cic time: {time.time() - ti}')
+ 
+density = tf.squeeze(density, axis=0)
+density = tf.squeeze(density, axis=0)
+density = tf.reduce_sum(density, axis=2)
+density = tf.transpose(density, perm=(1, 0))
+density = tf.reverse(density, axis=[0])
+ 
+fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+plt.imshow(density)
+ax.set_title('Density Plot')
+plt.tight_layout()
+plt.show()
+# fig.savefig('density_before.png', dpi=300)
+plt.close()
